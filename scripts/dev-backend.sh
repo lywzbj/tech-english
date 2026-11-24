@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+set -euo pipefail
+cd "$(dirname "$0")/.."
+
+# The machine may have a stale JAVA_HOME from another toolchain.
+if [ ! -x "${JAVA_HOME:-}/bin/java" ] && [ -x /c/develop/java17/bin/java ]; then
+  export JAVA_HOME='C:\develop\java17'
+fi
+export PATH="/c/develop/java17/bin:$PATH"
+
+cd backend
+exec mvn spring-boot:run "$@"

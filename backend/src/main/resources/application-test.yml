@@ -1,0 +1,24 @@
+spring:
+  datasource:
+    url: jdbc:sqlite:${java.io.tmpdir}/tech-english-test-${random.uuid}.db?foreign_keys=on&journal_mode=WAL&busy_timeout=5000
+    driver-class-name: org.sqlite.JDBC
+    username:
+    password:
+    hikari:
+      maximum-pool-size: 2
+      minimum-idle: 1
+  jpa:
+    database-platform: org.hibernate.community.dialect.SQLiteDialect
+    hibernate:
+      ddl-auto: none
+  flyway:
+    enabled: false
+app:
+  ai:
+    provider: mock
+  vector:
+    enabled: true
+    provider: hash
+    dimension: 384
+    model: local-hash-384
+    sqlite-extension: lib/sqlite-vec/vec0

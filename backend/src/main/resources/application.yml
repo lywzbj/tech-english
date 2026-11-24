@@ -1,0 +1,86 @@
+spring:
+  application:
+    name: tech-english
+  config:
+    import:
+      - optional:file:./.env[.properties]
+      - optional:file:../.env[.properties]
+  # Default runtime database: SQLite file, no server to install.
+  # Switch to MySQL with: --spring.profiles.active=mysql (see application-mysql.yml).
+  datasource:
+    url: ${DB_URL:jdbc:sqlite:${SQLITE_PATH:./data/tech-english.db}?foreign_keys=on&journal_mode=WAL&busy_timeout=5000}
+    driver-class-name: ${DB_DRIVER:org.sqlite.JDBC}
+    username: ${DB_USERNAME:}
+    password: ${DB_PASSWORD:}
+    hikari:
+      # The after-commit indexer opens its own transaction while the request
+      # connection is still checked out, so the pool needs a second slot.
+      maximum-pool-size: 2
+      minimum-idle: 1
+  jpa:
+    open-in-view: false
+    database-platform: org.hibernate.community.dialect.SQLiteDialect
+    hibernate:
+      ddl-auto: none
+    properties:
+      hibernate:
+        jdbc:
+          time_zone: UTC
+        format_sql: false
+  flyway:
+    # Flyway 11 community does not ship a SQLite dialect.
+    # SQLite schema is applied by SqliteSchemaMigrator from db/migration/sqlite.
+    enabled: false
+  jackson:
+    time-zone: UTC
+    default-property-inclusion: non_null
+
+server:
+  port: 8080
+  error:
+    include-message: never
+
+springdoc:
+  api-docs:
+    path: /v3/api-docs
+  swagger-ui:
+    path: /swagger-ui.html
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics
+  endpoint:
+    health:
+      show-details: never
+
+app:
+  frontend-url: ${FRONTEND_URL:http://localhost:5173,http://127.0.0.1:5173}
+  jwt:
+    secret: ${JWT_SECRET:tech-english-local-development-secret-change-me-0123456789abcdef}
+    access-ttl-minutes: ${JWT_ACCESS_TTL_MINUTES:120}
+    refresh-ttl-days: ${JWT_REFRESH_TTL_DAYS:30}
+  ai:
+    provider: ${AI_PROVIDER:mock}
+    base-url: ${AI_BASE_URL:https://api.deepseek.com/v1}
+    api-key: ${AI_API_KEY:}
+    model: ${AI_MODEL:deepseek-chat}
+    max-output-tokens: ${AI_MAX_OUTPUT_TOKENS:1200}
+    timeout-seconds: ${AI_TIMEOUT_SECONDS:45}
+  vector:
+    enabled: ${VECTOR_ENABLED:true}
+    dimension: ${EMBEDDING_DIMENSION:384}
+    provider: ${EMBEDDING_PROVIDER:hash}
+    model: ${EMBEDDING_MODEL:local-hash-384}
+    base-url: ${EMBEDDING_BASE_URL:https://api.openai.com/v1}
+    api-key: ${EMBEDDING_API_KEY:}
+    timeout-seconds: ${EMBEDDING_TIMEOUT_SECONDS:30}
+    # Extension file without suffix; .dll/.so/.dylib is resolved per platform.
+    sqlite-extension: ${SQLITE_VEC_EXTENSION:lib/sqlite-vec/vec0}
+    max-results: 20
+
+logging:
+  level:
+    com.techenglish: INFO
+    org.hibernate.SQL: WARN

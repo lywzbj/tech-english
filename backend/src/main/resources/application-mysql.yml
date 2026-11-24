@@ -1,0 +1,23 @@
+# Optional MySQL 8+ runtime. Start with:
+#   mvn spring-boot:run -Dspring-boot.run.profiles=mysql
+# Create the schema/user first with scripts/init-mysql.sql.
+spring:
+  datasource:
+    url: ${MYSQL_URL:${DB_URL:jdbc:mysql://localhost:3306/tech_english?useUnicode=true&characterEncoding=utf8&serverTimezone=UTC&allowPublicKeyRetrieval=true&useSSL=false}}
+    username: ${MYSQL_USERNAME:${DB_USERNAME:tech_english}}
+    password: ${MYSQL_PASSWORD:${DB_PASSWORD:change-me}}
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    hikari:
+      maximum-pool-size: 8
+      minimum-idle: 2
+  jpa:
+    database-platform: org.hibernate.dialect.MySQLDialect
+    hibernate:
+      ddl-auto: validate
+  flyway:
+    enabled: true
+    locations: classpath:db/migration/mysql
+
+app:
+  database:
+    sqlite: false

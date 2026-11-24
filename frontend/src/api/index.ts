@@ -1,0 +1,108 @@
+import { http } from './http'
+import type {
+  AiExplainResponse,
+  AiStatus,
+  AttemptsResponse,
+  AuthResponse,
+  Dashboard,
+  DueVocabResponse,
+  GrammarLesson,
+  GrammarPath,
+  MeResponse,
+  ProfileUpdateRequest,
+  ReadingArticleDetail,
+  ReadingCompleteResponse,
+  ReadingListResponse,
+  ReviewResponse,
+  SearchResponse,
+  SetupStatus,
+  Task,
+  TodayPlan,
+  VectorStatus,
+  VocabCard,
+  VocabLookup,
+  VocabularyListResponse,
+  WeekPlan,
+} from '@/types/api'
+
+export const authApi = {
+  setupStatus: () => http.get<SetupStatus>('/setup/status').then((r) => r.data),
+  setup: (body: { email: string; password: string; displayName: string }) =>
+    http.post<AuthResponse>('/setup', body).then((r) => r.data),
+  login: (body: { email: string; password: string }) =>
+    http.post<AuthResponse>('/auth/login', body).then((r) => r.data),
+  refresh: () => http.post<AuthResponse>('/auth/refresh').then((r) => r.data),
+  logout: () => http.post('/auth/logout').then(() => undefined),
+  me: () => http.get<MeResponse>('/me').then((r) => r.data),
+  updateProfile: (body: ProfileUpdateRequest) =>
+    http.put<MeResponse>('/me/profile', body).then((r) => r.data),
+}
+
+export const grammarApi = {
+  path: () => http.get<GrammarPath>('/grammar/path').then((r) => r.data),
+  lesson: (slug: string) =>
+    http.get<GrammarLesson>(`/grammar/topics/${encodeURIComponent(slug)}`).then((r) => r.data),
+  submit: (slug: string, answers: { exerciseId: string; answer: string }[]) =>
+    http
+      .post<AttemptsResponse>(`/grammar/topics/${encodeURIComponent(slug)}/attempts`, { answers })
+      .then((r) => r.data),
+}
+
+export const vocabularyApi = {
+  due: (limit = 20) =>
+    http.get<DueVocabResponse>('/vocabulary/due', { params: { limit } }).then((r) => r.data),
+  list: () => http.get<VocabularyListResponse>('/vocabulary').then((r) => r.data),
+  add: (lemma: string, contextSentence?: string) =>
+    http.post<VocabCard>('/vocabulary', { lemma, contextSentence }).then((r) => r.data),
+  review: (userVocabId: number, rating: number) =>
+    http
+      .post<ReviewResponse>(`/vocabulary/${userVocabId}/review`, { rating })
+      .then((r) => r.data),
+  lookup: (word: string) =>
+    http.get<VocabLookup>('/vocabulary/lookup', { params: { word } }).then((r) => r.data),
+}
+
+export const readingApi = {
+  list: (type?: string) =>
+    http
+      .get<ReadingListResponse>('/reading/articles', { params: type ? { type } : undefined })
+      .then((r) => r.data),
+  detail: (id: number) =>
+    http.get<ReadingArticleDetail>(`/reading/articles/${id}`).then((r) => r.data),
+  importText: (body: {
+    title: string
+    subtitle?: string
+    contentMd: string
+    sourceUrl?: string
+    sourceType?: string
+  }) => http.post<ReadingArticleDetail>('/reading/import', body).then((r) => r.data),
+  importUrl: (body: { url: string; title?: string }) =>
+    http.post<ReadingArticleDetail>('/reading/import-url', body).then((r) => r.data),
+  complete: (id: number, body: { minutes: number; answers: { questionId: number; answer: string }[] }) =>
+    http
+      .post<ReadingCompleteResponse>(`/reading/articles/${id}/complete`, body)
+      .then((r) => r.data),
+}
+
+export const planApi = {
+  today: () => http.get<TodayPlan>('/plan/today').then((r) => r.data),
+  week: () => http.get<WeekPlan>('/plan/week').then((r) => r.data),
+  completeTask: (id: number) =>
+    http.post<Task>(`/plan/tasks/${id}/complete`).then((r) => r.data),
+}
+
+export const dashboardApi = {
+  get: () => http.get<Dashboard>('/dashboard').then((r) => r.data),
+}
+
+export const aiApi = {
+  status: () => http.get<AiStatus>('/ai/status').then((r) => r.data),
+  explain: (body: { text: string; context?: string; mode?: string }) =>
+    http.post<AiExplainResponse>('/ai/explain', body).then((r) => r.data),
+}
+
+export const searchApi = {
+  query: (q: string, limit = 8) =>
+    http.get<SearchResponse>('/search', { params: { q, limit } }).then((r) => r.data),
+  status: () => http.get<VectorStatus>('/search/status').then((r) => r.data),
+}
