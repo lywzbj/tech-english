@@ -1,0 +1,18 @@
+* text=auto
+
+# Shell scripts must keep LF so they run in Git Bash/WSL after checkout.
+*.sh text eol=lf
+*.sql text eol=lf
+*.md text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
+*.java text eol=lf
+*.ts text eol=lf
+*.vue text eol=lf
+*.json text eol=lf
+*.css text eol=lf
+
+*.dll binary
+*.so binary
+*.dylib binary
+*.db binary
