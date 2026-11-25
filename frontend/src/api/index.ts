@@ -21,6 +21,7 @@ import type {
   VectorStatus,
   VocabCard,
   VocabLookup,
+  VocabularyAddRequest,
   VocabularyListResponse,
   WeekPlan,
 } from '@/types/api'
@@ -52,8 +53,8 @@ export const vocabularyApi = {
   due: (limit = 20) =>
     http.get<DueVocabResponse>('/vocabulary/due', { params: { limit } }).then((r) => r.data),
   list: () => http.get<VocabularyListResponse>('/vocabulary').then((r) => r.data),
-  add: (lemma: string, contextSentence?: string) =>
-    http.post<VocabCard>('/vocabulary', { lemma, contextSentence }).then((r) => r.data),
+  add: (payload: VocabularyAddRequest) =>
+    http.post<VocabCard>('/vocabulary', payload).then((r) => r.data),
   review: (userVocabId: number, rating: number) =>
     http
       .post<ReviewResponse>(`/vocabulary/${userVocabId}/review`, { rating })

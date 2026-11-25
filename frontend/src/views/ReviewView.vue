@@ -181,8 +181,8 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
           <div v-else class="answer-area">
             <div class="answer-main">
               <span class="answer-label">MEANING</span>
-              <h3>{{ current.definitionZh }}</h3>
-              <p class="definition-en">{{ current.definitionEn }}</p>
+              <h3>{{ current.definitionZh || '暂无释义' }}</h3>
+              <p v-if="current.definitionEn" class="definition-en">{{ current.definitionEn }}</p>
             </div>
             <div v-if="current.exampleEn" class="example-block">
               <span class="answer-label">EXAMPLE</span>

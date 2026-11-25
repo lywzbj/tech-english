@@ -1,10 +1,8 @@
 <script setup lang="ts">
-import { Close, EditPen } from '@element-plus/icons-vue'
 import type { ReadingCompleteResponse, ReadingQuestion } from '@/types/api'
 
-// 右下角悬浮的阅读理解弹窗：由右缘「题目」入口按钮唤出，答题状态仍由父级持有。
+// 阅读理解内容：抽屉只负责容器，答题状态仍由父级持有。
 defineProps<{
-  open: boolean
   questions: ReadingQuestion[]
   answers: Record<number, string>
   submitting: boolean
@@ -15,27 +13,13 @@ defineProps<{
 }>()
 
 const emit = defineEmits<{
-  (e: 'update:open', open: boolean): void
   (e: 'answer', questionId: number, value: string): void
   (e: 'submit'): void
 }>()
 </script>
 
 <template>
-  <section v-if="open" class="question-panel card" aria-label="阅读理解">
-    <div class="question-head">
-      <div>
-        <p class="eyebrow">COMPREHENSION</p>
-        <h2><el-icon class="head-icon"><EditPen /></el-icon> 阅读理解</h2>
-      </div>
-      <div class="question-head-right">
-        <span class="question-count">{{ answeredCount }} / {{ questionCount }}</span>
-        <el-button circle size="small" title="收起阅读理解" @click="emit('update:open', false)">
-          <el-icon><Close /></el-icon>
-        </el-button>
-      </div>
-    </div>
-
+  <section class="question-panel" aria-label="阅读理解">
     <div v-if="questionCount === 0" class="no-questions">
       <p>这是导入文章，暂时没有题目。完成阅读后仍会记录阅读时长。</p>
     </div>
@@ -91,56 +75,9 @@ const emit = defineEmits<{
 </template>
 
 <style scoped>
-.question-panel {
-  width: 380px;
-  max-width: calc(100vw - 32px);
-  max-height: min(560px, 64vh);
-  overflow-y: auto;
-  overscroll-behavior: contain;
-  padding: 18px;
-  animation: rise-in 0.18s ease both;
-}
-
-.question-head {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 10px;
-}
-
-.question-head h2 {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  margin-top: 3px;
-  font-family: var(--font-reading);
-  font-size: 19px;
-  font-weight: 600;
-  letter-spacing: -0.02em;
-}
-
-.head-icon {
-  color: var(--green);
-  font-size: 17px;
-}
-
-.question-head-right {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.question-count {
-  color: var(--faint);
-  font-family: var(--font-mono);
-  font-size: 11px;
-  white-space: nowrap;
-}
-
 .question-list {
   display: grid;
   gap: 18px;
-  margin-top: 17px;
 }
 
 .question {
@@ -192,7 +129,6 @@ const emit = defineEmits<{
 }
 
 .no-questions {
-  margin-top: 13px;
   padding: 13px;
   border-radius: 9px;
   background: var(--surface-2);

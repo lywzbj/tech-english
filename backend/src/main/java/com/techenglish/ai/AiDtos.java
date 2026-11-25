@@ -24,7 +24,7 @@ public final class AiDtos {
     }
 
     /**
-     * Mirror of the JSON object requested by prompts/explain/v1.md. Used as the
+     * Mirror of the JSON object requested by prompts/explain/v2.md. Used as the
      * Spring AI structured-output target.
      */
     public record ExplainPayload(

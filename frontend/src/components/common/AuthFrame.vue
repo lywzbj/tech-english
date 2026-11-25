@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import ThemeSwitcher from '@/components/ThemeSwitcher.vue'
+import ThemeSwitcher from './ThemeSwitcher.vue'
 
 defineProps<{
   eyebrow: string

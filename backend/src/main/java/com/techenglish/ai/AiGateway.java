@@ -3,10 +3,12 @@ package com.techenglish.ai;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.techenglish.common.ApiException;
 import org.springframework.ai.chat.client.ChatClient;
+import org.springframework.ai.chat.client.ResponseEntity;
 import org.springframework.ai.chat.metadata.Usage;
 import org.springframework.ai.chat.model.ChatResponse;
 import org.springframework.ai.chat.prompt.ChatOptions;
 import org.springframework.ai.converter.BeanOutputConverter;
+import org.springframework.ai.converter.StructuredOutputConverter;
 import org.springframework.ai.openai.OpenAiChatOptions;
 import org.springframework.ai.openai.api.ResponseFormat;
 import org.springframework.ai.retry.NonTransientAiException;
@@ -20,19 +22,20 @@ import java.util.Locale;
 @Service
 public class AiGateway {
 
-    private static final String PROMPT_VERSION = "explain-v1";
+    private static final String PROMPT_VERSION = "explain-v2";
     private static final double TEMPERATURE = 0.2;
 
     private final AiProperties properties;
     private final ChatClient aiChatClient;
-    private final BeanOutputConverter<AiDtos.ExplainPayload> outputConverter;
+    private final StructuredOutputConverter<AiDtos.ExplainPayload> outputConverter;
     private final AiCallLogRepository aiCallLogRepository;
 
     public AiGateway(AiProperties properties, ChatClient aiChatClient, ObjectMapper objectMapper,
                      AiCallLogRepository aiCallLogRepository) {
         this.properties = properties;
         this.aiChatClient = aiChatClient;
-        this.outputConverter = new BeanOutputConverter<>(AiDtos.ExplainPayload.class, objectMapper);
+        this.outputConverter = new TolerantExplainConverter(
+                new BeanOutputConverter<>(AiDtos.ExplainPayload.class, objectMapper));
         this.aiCallLogRepository = aiCallLogRepository;
     }
 
@@ -61,16 +64,26 @@ public class AiGateway {
             if (!properties.configured()) {
                 throw ApiException.unavailable("未配置 AI_API_KEY / AI_BASE_URL，请在 .env 或环境变量中设置");
             }
-            ChatResponse response = aiChatClient.prompt()
+            // responseEntity() lets Spring AI append the converter's JSON format
+            // instructions to the prompt and parse the reply, while still handing
+            // back the ChatResponse for token usage and finish reason.
+            ResponseEntity<ChatResponse, AiDtos.ExplainPayload> response = aiChatClient.prompt()
                     .system(systemPrompt)
                     .user(userPrompt)
                     .options(chatOptions())
                     .call()
-                    .chatResponse();
-            String raw = extractContent(response);
-            AiDtos.ExplainResponse result = toResponse(provider, raw);
-            log(userId, provider, "SUCCESS", (int) (System.currentTimeMillis() - started),
-                    tokens(response, true), tokens(response, false), null);
+                    .responseEntity(outputConverter);
+            ChatResponse chatResponse = response.getResponse();
+            String raw = extractContent(chatResponse);
+            String finishReason = finishReason(chatResponse);
+            AiDtos.ExplainPayload payload = response.getEntity();
+            boolean degraded = payload == null && looksLikeJson(raw);
+            AiDtos.ExplainResponse result = toResponse(provider, raw, payload,
+                    "length".equalsIgnoreCase(finishReason));
+            log(userId, provider, degraded ? "DEGRADED" : "SUCCESS",
+                    (int) (System.currentTimeMillis() - started),
+                    tokens(chatResponse, true), tokens(chatResponse, false),
+                    degraded ? "Unparseable model output (finishReason=" + finishReason + ")" : null);
             return result;
         } catch (RuntimeException ex) {
             log(userId, provider, "FAILED", (int) (System.currentTimeMillis() - started), null, null, ex.getMessage());
@@ -98,12 +111,18 @@ public class AiGateway {
         return raw;
     }
 
-    private AiDtos.ExplainResponse toResponse(String provider, String raw) {
-        AiDtos.ExplainPayload payload = parse(raw);
+    private AiDtos.ExplainResponse toResponse(String provider, String raw, AiDtos.ExplainPayload payload,
+                                              boolean truncated) {
         if (payload == null) {
-            // Preserve the old degradation: a malformed model answer is shown as text
-            // instead of turning the whole reading request into a 503.
-            return new AiDtos.ExplainResponse(provider, properties.getModel(), "", raw, List.of(), List.of());
+            // A plain-text answer still reaches the learner, but broken JSON does not:
+            // it is usually structured output cut off by the token limit and would only
+            // show the learner a wall of half-finished JSON.
+            String explanation = looksLikeJson(raw)
+                    ? (truncated
+                        ? "AI 输出达到长度上限，未能生成完整讲解。请缩短选中文本后重试。"
+                        : "AI 返回的 JSON 无法解析，请重试或缩短选中文本。")
+                    : raw;
+            return new AiDtos.ExplainResponse(provider, properties.getModel(), "", explanation, List.of(), List.of());
         }
         String translation = payload.translation() == null ? "" : payload.translation();
         String explanation = payload.explanation() == null ? "" : payload.explanation();
@@ -117,12 +136,17 @@ public class AiGateway {
         );
     }
 
-    private AiDtos.ExplainPayload parse(String raw) {
-        try {
-            return outputConverter.convert(raw);
-        } catch (RuntimeException ex) {
+    private static boolean looksLikeJson(String raw) {
+        String trimmed = raw.stripLeading();
+        return trimmed.startsWith("{") || trimmed.startsWith("[") || trimmed.startsWith("```");
+    }
+
+    private static String finishReason(ChatResponse response) {
+        if (response == null || response.getResults().isEmpty()) {
             return null;
         }
+        var metadata = response.getResult().getMetadata();
+        return metadata == null ? null : metadata.getFinishReason();
     }
 
     private String providerName() {
@@ -131,7 +155,7 @@ public class AiGateway {
 
     private String loadPrompt() {
         try {
-            return new ClassPathResource("prompts/explain/v1.md")
+            return new ClassPathResource("prompts/explain/v2.md")
                     .getContentAsString(StandardCharsets.UTF_8);
         } catch (Exception ex) {
             return "You are an experienced English teacher. Explain the learner's text in Chinese and return JSON.";
@@ -181,6 +205,35 @@ public class AiGateway {
             aiCallLogRepository.save(log);
         } catch (Exception ignored) {
             // Logging must never break the learner's request.
+        }
+    }
+
+    /**
+     * Delegates the prompt format instructions to Spring AI's BeanOutputConverter,
+     * but turns an unparseable reply into a null entity instead of an exception.
+     * Spring AI still returns the ChatResponse, so the gateway can inspect the raw
+     * text and finish reason and degrade gracefully when the output was truncated.
+     */
+    private static final class TolerantExplainConverter implements StructuredOutputConverter<AiDtos.ExplainPayload> {
+
+        private final BeanOutputConverter<AiDtos.ExplainPayload> delegate;
+
+        private TolerantExplainConverter(BeanOutputConverter<AiDtos.ExplainPayload> delegate) {
+            this.delegate = delegate;
+        }
+
+        @Override
+        public String getFormat() {
+            return delegate.getFormat();
+        }
+
+        @Override
+        public AiDtos.ExplainPayload convert(String source) {
+            try {
+                return delegate.convert(source);
+            } catch (RuntimeException ex) {
+                return null;
+            }
         }
     }
 }

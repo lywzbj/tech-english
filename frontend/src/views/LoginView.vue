@@ -2,7 +2,7 @@
 import { reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, type FormInstance, type FormRules } from 'element-plus'
-import AuthFrame from '@/components/AuthFrame.vue'
+import AuthFrame from '@/components/common/AuthFrame.vue'
 import { useAuthStore } from '@/stores/auth'
 import { errorMessage } from '@/utils/error'
 
