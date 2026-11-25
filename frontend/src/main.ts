@@ -4,10 +4,15 @@ import ElementPlus from 'element-plus'
 import zhCn from 'element-plus/es/locale/lang/zh-cn'
 import * as ElementPlusIconsVue from '@element-plus/icons-vue'
 import 'element-plus/dist/index.css'
+import 'element-plus/theme-chalk/dark/css-vars.css'
 import 'highlight.js/styles/github-dark.css'
 import './styles/main.css'
 import App from './App.vue'
 import router from './router'
+import { initTheme } from './composables/useTheme'
+
+// Paint the saved theme before mounting so a night-mode reload never flashes white.
+initTheme()
 
 const app = createApp(App)
 

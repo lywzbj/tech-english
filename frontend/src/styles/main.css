@@ -1,22 +1,61 @@
-:root {
-  --bg: #f3f0e7;
-  --bg-deep: #ebe6d9;
-  --surface: #fffdf8;
-  --surface-2: #faf6ec;
-  --surface-3: #f0ebdf;
+/*
+ * Skins: `html[data-theme]` is set by useTheme (light = white day mode,
+ * sepia = pale-yellow eye-comfort mode, night = black background / white text).
+ * The `dark` class on <html> additionally loads Element Plus's own dark css-vars
+ * for dialogs/poppers; theme-specific --el-* overrides below keep the green brand.
+ * New colors must be added as tokens here — component styles may not hardcode hex.
+ */
+:root,
+html[data-theme='light'] {
+  --bg: #f4f6f4;
+  --bg-deep: #e9ece9;
+  --surface: #ffffff;
+  --surface-2: #f6f8f6;
+  --surface-3: #edf1ed;
   --ink: #1e2b23;
   --ink-soft: #3f4c43;
-  --muted: #6f7b71;
-  --faint: #9aa39b;
-  --line: #e4ded0;
-  --line-strong: #d4ccba;
+  --muted: #67746a;
+  --faint: #97a199;
+  --line: #e3e7e3;
+  --line-strong: #cfd6cf;
   --green: #245c43;
   --green-2: #3b7a5b;
   --green-3: #dcebe2;
+  --green-solid: #245c43;
+  --green-solid-hover: #3b7a5b;
+  --green-solid-active: #1a4632;
+  --green-soft: #e7f0ea;
+  --green-line: #b8d3c2;
   --amber: #c97838;
   --amber-soft: #f7e7d7;
+  --amber-line: #e5cfb7;
+  --amber-text: #8d4d1d;
   --rose: #b35d58;
+  --rose-soft: #f9edeb;
+  --rose-line: #e0bdb9;
   --blue: #446b88;
+  --blue-soft: #e9f1f6;
+  --blue-line: #b7cade;
+  --wash-a: #f2f7f3;
+  --wash-b: #fbfcfa;
+  --hero-1: #1e4431;
+  --hero-2: #163124;
+  --hero-3: #12261c;
+  --hero-glow: rgb(137 181 151 / 28%);
+  --hero-ink: #eef5ef;
+  --hero-ring: transparent;
+  --hero-kicker: #a8c8b3;
+  --hero-chip: #c6ddcd;
+  --side-1: #1b3528;
+  --side-2: #162a20;
+  --side-3: #12231b;
+  --side-glow: rgb(89 137 108 / 35%);
+  --side-ink: #eef5ef;
+  --glow-a: rgb(255 255 255 / 95%);
+  --glow-b: rgb(220 235 226 / 50%);
+  --header-bg: rgb(244 246 244 / 82%);
+  --header-line: rgb(227 231 227 / 80%);
+  --selection: #cfe3d7;
   --shadow-sm: 0 1px 2px rgb(31 43 35 / 5%), 0 6px 18px rgb(31 43 35 / 4%);
   --shadow-md: 0 2px 4px rgb(31 43 35 / 5%), 0 18px 46px rgb(31 43 35 / 8%);
   --radius-sm: 10px;
@@ -43,6 +82,154 @@
   --el-text-color-regular: var(--ink-soft);
   --el-border-color: var(--line);
   --el-fill-color-blank: var(--surface);
+  --el-bg-color: var(--surface);
+  --el-bg-color-page: var(--bg);
+  --el-bg-color-overlay: var(--surface);
+}
+
+html[data-theme='sepia'] {
+  --bg: #f3ecd8;
+  --bg-deep: #e9dfc2;
+  --surface: #fbf6e7;
+  --surface-2: #f6eed9;
+  --surface-3: #ece1c4;
+  --ink: #2e3426;
+  --ink-soft: #4d4a35;
+  --muted: #6f6b52;
+  --faint: #a29d82;
+  --line: #e2d8b8;
+  --line-strong: #cfc39b;
+  --green: #35684d;
+  --green-2: #4c7f60;
+  --green-3: #e4e8cc;
+  --green-solid: #5f7140;
+  --green-solid-hover: #74894f;
+  --green-solid-active: #4a5a30;
+  --green-soft: #eaedcf;
+  --green-line: #c5c39a;
+  --amber: #b06f34;
+  --amber-soft: #f0dfbd;
+  --amber-line: #ddc49a;
+  --amber-text: #7c4a17;
+  --rose: #a85850;
+  --rose-soft: #f3e2cd;
+  --rose-line: #ddc0a8;
+  --blue: #4d6f84;
+  --blue-soft: #ecebd2;
+  --blue-line: #c8c6a4;
+  --wash-a: #f4eed7;
+  --wash-b: #fdf8e8;
+  --hero-1: #4d4527;
+  --hero-2: #3d351e;
+  --hero-3: #2f2816;
+  --hero-glow: rgb(216 179 110 / 30%);
+  --hero-ink: #f7f1de;
+  --hero-ring: transparent;
+  --hero-kicker: #dcc084;
+  --hero-chip: #ead9ae;
+  --side-1: #423a24;
+  --side-2: #352e1c;
+  --side-3: #292315;
+  --side-glow: rgb(198 164 100 / 32%);
+  --side-ink: #f4ecd8;
+  --glow-a: rgb(255 251 232 / 90%);
+  --glow-b: rgb(226 214 166 / 45%);
+  --header-bg: rgb(243 236 216 / 85%);
+  --header-line: rgb(226 216 184 / 80%);
+  --selection: #e7dcac;
+  --shadow-sm: 0 1px 2px rgb(90 75 35 / 5%), 0 6px 18px rgb(90 75 35 / 4%);
+  --shadow-md: 0 2px 4px rgb(90 75 35 / 5%), 0 18px 46px rgb(90 75 35 / 8%);
+
+  /* Olive-shifted Element Plus primary so focus rings / checks match the action color. */
+  --el-color-primary: #5f7140;
+  --el-color-primary-light-3: #8f9c79;
+  --el-color-primary-light-5: #afb89f;
+  --el-color-primary-light-7: #cfd4c6;
+  --el-color-primary-light-8: #dfe3d9;
+  --el-color-primary-light-9: #eff1ec;
+  --el-color-primary-dark-2: #4a5a30;
+}
+
+html[data-theme='night'] {
+  --bg: #101310;
+  --bg-deep: #0a0c0a;
+  --surface: #1a1e1b;
+  --surface-2: #212622;
+  --surface-3: #2a302b;
+  --ink: #e9ede9;
+  --ink-soft: #ccd3cd;
+  --muted: #99a29a;
+  --faint: #6e776f;
+  --line: #2f3630;
+  --line-strong: #414a43;
+  --green: #83c5a1;
+  --green-2: #6cb189;
+  --green-3: #22392c;
+  --green-solid: #2e6b4e;
+  --green-solid-hover: #3d8561;
+  --green-solid-active: #245239;
+  --green-soft: #21362a;
+  --green-line: #3c5849;
+  --amber: #dfa063;
+  --amber-soft: #33281a;
+  --amber-line: #57432a;
+  --amber-text: #e2a86b;
+  --rose: #e09a94;
+  --rose-soft: #372421;
+  --rose-line: #5c3a35;
+  --blue: #93bdd9;
+  --blue-soft: #1f2c36;
+  --blue-line: #35505f;
+  --wash-a: #22302a;
+  --wash-b: #242a25;
+  --hero-1: #1f2b23;
+  --hero-2: #19231c;
+  --hero-3: #141c16;
+  --hero-glow: rgb(131 197 161 / 16%);
+  --hero-ink: #e4eae4;
+  --hero-ring: rgb(131 197 161 / 24%);
+  --hero-kicker: #8fd0ab;
+  --hero-chip: #b5dcc4;
+  --side-1: #1a211b;
+  --side-2: #151a16;
+  --side-3: #11150f;
+  --side-glow: rgb(131 197 161 / 13%);
+  --side-ink: #e6ebe6;
+  --glow-a: rgb(64 96 76 / 26%);
+  --glow-b: rgb(44 66 52 / 22%);
+  --header-bg: rgb(16 19 16 / 85%);
+  --header-line: rgb(47 54 48 / 85%);
+  --selection: #33543f;
+  --shadow-sm: 0 1px 2px rgb(0 0 0 / 34%), 0 6px 18px rgb(0 0 0 / 30%);
+  --shadow-md: 0 2px 4px rgb(0 0 0 / 36%), 0 18px 46px rgb(0 0 0 / 44%);
+
+  /* Re-pin the brand green: Element Plus's dark css-vars default to its blue palette. */
+  --el-color-primary: #4c9470;
+  --el-color-primary-light-3: #3d7c5d;
+  --el-color-primary-light-5: #33674e;
+  --el-color-primary-light-7: #2a543f;
+  --el-color-primary-light-8: #254937;
+  --el-color-primary-light-9: #1f3c2e;
+  --el-color-primary-dark-2: #5fa984;
+  --el-color-success: #6cb189;
+  --el-color-warning: #dfa063;
+  --el-color-danger: #e09a94;
+  --el-text-color-primary: var(--ink);
+  --el-text-color-regular: var(--ink-soft);
+  --el-text-color-secondary: var(--muted);
+  --el-text-color-placeholder: var(--faint);
+  --el-border-color: var(--line);
+  --el-border-color-light: var(--line);
+  --el-border-color-lighter: var(--line);
+  --el-fill-color-blank: var(--surface);
+  --el-bg-color: var(--surface);
+  --el-bg-color-page: var(--bg);
+  --el-bg-color-overlay: #1e241f;
+  --el-fill-color-light: var(--surface-2);
+  --el-fill-color: var(--surface-3);
+  --el-fill-color-lighter: var(--surface-2);
+  --el-fill-color-extra-light: var(--surface-2);
+  --el-mask-color: rgb(0 0 0 / 64%);
 }
 
 * {
@@ -59,8 +246,8 @@ body {
   min-height: 100vh;
   color: var(--ink);
   background:
-    radial-gradient(circle at 8% 0%, rgb(255 253 248 / 90%), transparent 38%),
-    radial-gradient(circle at 92% 12%, rgb(220 235 226 / 55%), transparent 32%),
+    radial-gradient(circle at 8% 0%, var(--glow-a), transparent 38%),
+    radial-gradient(circle at 92% 12%, var(--glow-b), transparent 32%),
     var(--bg);
   font-family: var(--font-ui);
   font-size: 15px;
@@ -171,21 +358,21 @@ p {
 }
 
 .pill.green {
-  border-color: #cfe2d6;
+  border-color: var(--green-line);
   background: var(--green-3);
-  color: #245c43;
+  color: var(--green);
 }
 
 .pill.amber {
-  border-color: #edd8c1;
+  border-color: var(--amber-line);
   background: var(--amber-soft);
-  color: #8d4d1d;
+  color: var(--amber-text);
 }
 
 .pill.blue {
-  border-color: #d3e2ec;
-  background: #e9f1f6;
-  color: #355d79;
+  border-color: var(--blue-line);
+  background: var(--blue-soft);
+  color: var(--blue);
 }
 
 .dot {
@@ -249,13 +436,14 @@ p {
   font-weight: 600;
 }
 
+/* Action color, not the text-accent --green (which flips to bright mint in night). */
 .el-button--primary {
-  --el-button-bg-color: var(--green);
-  --el-button-border-color: var(--green);
-  --el-button-hover-bg-color: var(--green-2);
-  --el-button-hover-border-color: var(--green-2);
-  --el-button-active-bg-color: #1a4632;
-  --el-button-active-border-color: #1a4632;
+  --el-button-bg-color: var(--green-solid);
+  --el-button-border-color: var(--green-solid);
+  --el-button-hover-bg-color: var(--green-solid-hover);
+  --el-button-hover-border-color: var(--green-solid-hover);
+  --el-button-active-bg-color: var(--green-solid-active);
+  --el-button-active-border-color: var(--green-solid-active);
 }
 
 .el-button.is-round {
@@ -354,7 +542,7 @@ p {
   padding: 2px 6px;
   border-radius: 6px;
   background: var(--surface-3);
-  color: #315943;
+  color: var(--green);
   font-family: var(--font-mono);
   font-size: 0.88em;
 }
@@ -394,9 +582,9 @@ p {
 
 .reading-prose {
   font-family: var(--font-reading);
-  font-size: 19px;
+  font-size: 20px;
   line-height: 1.9;
-  color: #2b3830;
+  color: var(--ink);
 }
 
 .reading-prose h1 {
@@ -425,7 +613,7 @@ p {
 }
 
 ::selection {
-  background: #cfe3d7;
+  background: var(--selection);
   color: var(--ink);
 }
 
@@ -458,7 +646,7 @@ p {
   }
 
   .reading-prose {
-    font-size: 17px;
+    font-size: 18px;
     line-height: 1.85;
   }
 }

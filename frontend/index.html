@@ -9,6 +9,24 @@
   </head>
   <body>
     <div id="app"></div>
+    <script>
+      // Pre-paint theme bootstrap (mirrors composables/useTheme.ts) so a
+      // night/sepia reload never flashes the light background before CSS loads.
+      (function () {
+        try {
+          var saved = localStorage.getItem('tech-english-theme')
+          var theme = saved === 'sepia' || saved === 'night' ? saved : 'light'
+          var root = document.documentElement
+          root.dataset.theme = theme
+          root.classList.toggle('dark', theme === 'night')
+          root.style.colorScheme = theme === 'night' ? 'dark' : 'light'
+          root.style.background =
+            theme === 'night' ? '#101310' : theme === 'sepia' ? '#f3ecd8' : '#f4f6f4'
+        } catch (e) {
+          /* private mode without localStorage: stay on light */
+        }
+      })()
+    </script>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>

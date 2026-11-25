@@ -10,7 +10,7 @@
 - Onboarding：目标分数、考试日期、每日时长、技术栈、当前水平。
 - 语法闯关：3 个世界、15 个节点、微课、技术场景例句、3 道练习、Boss 判定、掌握度和前置解锁。
 - 词汇 SRS：50 个种子词、自动建 30 词初始词汇本、SM-2 四档评分、到期队列、阅读加词。
-- 阅读实验室：4 篇原创文章（1 篇雅思风格 + 3 篇技术英语）、TOC、字号调整、选中词句、查词、AI 解释、阅读理解题、阅读记录。
+- 阅读实验室：4 篇原创文章（1 篇雅思风格 + 3 篇技术英语）、TOC、字号调整、选中词句、查词、AI 解释、阅读理解题、阅读记录；导入支持上传 Markdown 文件（拖拽或点选 .md/.markdown/.txt，自动取首个 # 标题作为文章标题）、粘贴文本和抓取网页三种方式。导入内容会在后端归一化：清理文档工具导出的 `<a id>` 历史锚点和 HTML 注释，并把文内 `#锚点` 链接改写为渲染器实际生成的标题 id，保证目录和文内跳转可用。
 - 学习计划：按到期词汇、下一语法节点、未读文章生成今日任务；看板展示连续天数、本周投入、到期词、掌握度和今日任务。
 - 知识搜索：文章分段和词汇自动向量化，支持 sqlite-vec KNN 检索；扩展缺失时自动退回 Java 余弦。
 - AI 网关：基于 Spring AI 的 ChatClient，默认 `mock` 演示模型，可配置 DeepSeek；JSON 结构化输出、token 用量日志、失败降级。
@@ -31,6 +31,7 @@
 
 - 后端：Java 17、Spring Boot 3.5.15、Spring MVC、Spring Security、Spring Data JPA、Spring AI 1.1.8、Flyway（MySQL）、Validation、Actuator、springdoc-openapi、WebClient。
 - 前端：Vue 3.5、TypeScript 5.9、Vite 7、Element Plus、Pinia、Vue Router、Axios、ECharts、markdown-it、highlight.js、DOMPurify。
+- 皮肤：日间（白）/ 护眼（淡黄）/ 夜间（黑底白字）三套主题，右上角一键切换，偏好存 localStorage；所有颜色走 CSS token（`styles/main.css` 的 `data-theme` 块），夜间模式同时激活 Element Plus 自带暗色变量表。
 - 数据库：SQLite（默认，Hibernate community dialect）或 MySQL 8.x；MySQL 使用 `utf8mb4_0900_ai_ci`。
 - 向量：sqlite-vec 0.1.9（可选扩展）+ 本地哈希嵌入；可切换 OpenAI 兼容 embeddings。
 - AI：Spring AI `ChatClient` + OpenAI 兼容模型（DeepSeek 默认）；结构化输出和 token 统计由 Spring AI 处理。

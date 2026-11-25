@@ -192,10 +192,11 @@ onMounted(load)
   padding: 34px 40px;
   overflow: hidden;
   border-radius: var(--radius-lg);
-  color: #eef5ef;
+  border: 1px solid var(--hero-ring);
+  color: var(--hero-ink);
   background:
-    radial-gradient(circle at 82% 30%, rgb(135 181 152 / 32%), transparent 34%),
-    linear-gradient(125deg, #1d3f2d, #163124 66%, #12261c);
+    radial-gradient(circle at 82% 30%, var(--hero-glow), transparent 34%),
+    linear-gradient(125deg, var(--hero-1), var(--hero-2) 66%, var(--hero-3));
   box-shadow: var(--shadow-md);
 }
 
@@ -206,7 +207,7 @@ onMounted(load)
 }
 
 .hero-label {
-  color: #a8c8b3;
+  color: var(--hero-kicker);
   font-size: 9px;
   font-weight: 800;
   letter-spacing: 0.2em;
@@ -351,7 +352,7 @@ onMounted(load)
 
 .node-card:hover {
   transform: translateY(-3px);
-  border-color: #b9d1c1;
+  border-color: var(--green-line);
   box-shadow: var(--shadow-md);
 }
 
@@ -361,7 +362,7 @@ onMounted(load)
 }
 
 .node-card.completed {
-  background: linear-gradient(170deg, #fffdf8, #f0f6f1);
+  background: linear-gradient(170deg, var(--wash-b), var(--wash-a));
 }
 
 .node-card.locked {
@@ -395,13 +396,13 @@ onMounted(load)
 }
 
 .node-status.available {
-  background: #e9f1f6;
+  background: var(--blue-soft);
   color: var(--blue);
 }
 
 .node-status.in_progress {
   background: var(--amber-soft);
-  color: #8d4d1d;
+  color: var(--amber-text);
 }
 
 .node-status.mastered {
@@ -410,7 +411,7 @@ onMounted(load)
 }
 
 .node-status.locked {
-  background: #eee9de;
+  background: var(--surface-3);
   color: var(--faint);
 }
 
@@ -491,7 +492,7 @@ onMounted(load)
   right: 14px;
   padding: 3px 6px;
   border-radius: 0 0 5px 5px;
-  background: var(--green);
+  background: var(--green-solid);
   color: #fff;
   font-size: 7px;
   font-weight: 800;

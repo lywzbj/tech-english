@@ -294,7 +294,7 @@ onMounted(() => {
   margin-left: 4px;
   padding: 0 4px;
   border-radius: 5px;
-  background: var(--green);
+  background: var(--green-solid);
   color: #fff;
   font-family: var(--font-mono);
   font-size: 8px;
@@ -315,8 +315,8 @@ onMounted(() => {
 }
 
 .word-stat.accent {
-  background: linear-gradient(145deg, #eaf3ed, #f9fcf9);
-  border-color: #c9dfd1;
+  background: linear-gradient(145deg, var(--wash-a), var(--wash-b));
+  border-color: var(--green-line);
 }
 
 .word-stat > span {
@@ -455,13 +455,13 @@ onMounted(() => {
 }
 
 .status-tag.new {
-  background: #e9f1f6;
+  background: var(--blue-soft);
   color: var(--blue);
 }
 
 .status-tag.learning {
   background: var(--amber-soft);
-  color: #8d4d1d;
+  color: var(--amber-text);
 }
 
 .status-tag.review {
@@ -470,8 +470,8 @@ onMounted(() => {
 }
 
 .status-tag.mastered {
-  background: #dcebe2;
-  color: #1d5b3e;
+  background: var(--green-3);
+  color: var(--green);
 }
 
 .word-zh {
@@ -526,7 +526,7 @@ onMounted(() => {
 .lookup-error {
   padding: 10px 12px;
   border-radius: 8px;
-  background: #f9edeb;
+  background: var(--rose-soft);
   color: var(--rose);
   font-size: 11px;
 }

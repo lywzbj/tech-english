@@ -422,7 +422,7 @@ function optionState(exerciseId: string, option: string) {
 }
 
 .tip-card {
-  background: #f7f2e7;
+  background: var(--surface-2);
 }
 
 .tip-card > p:last-child {
@@ -453,11 +453,11 @@ function optionState(exerciseId: string, option: string) {
 }
 
 .exercise.correct {
-  border-color: #b8d3c2;
+  border-color: var(--green-line);
 }
 
 .exercise.wrong {
-  border-color: #e0bdb9;
+  border-color: var(--rose-line);
 }
 
 .exercise-head {
@@ -509,13 +509,13 @@ function optionState(exerciseId: string, option: string) {
 }
 
 .option.correct {
-  border-color: #9fc6ad;
-  background: #eaf4ee;
+  border-color: var(--green-line);
+  background: var(--green-soft);
 }
 
 .option.wrong {
-  border-color: #e1b8b4;
-  background: #f9edeb;
+  border-color: var(--rose-line);
+  background: var(--rose-soft);
 }
 
 .answer-feedback {
@@ -563,16 +563,16 @@ function optionState(exerciseId: string, option: string) {
   align-items: center;
   margin-top: 22px;
   padding: 22px 24px;
-  border: 1px solid #c4d8ca;
+  border: 1px solid var(--green-line);
   border-radius: var(--radius);
-  background: linear-gradient(135deg, #edf5ef, #f9fbf8);
+  background: linear-gradient(135deg, var(--wash-a), var(--wash-b));
 }
 
 .result-score {
   display: grid;
   justify-items: center;
   padding-right: 20px;
-  border-right: 1px solid #d3e2d8;
+  border-right: 1px solid var(--green-line);
 }
 
 .result-score span {
@@ -671,7 +671,7 @@ function optionState(exerciseId: string, option: string) {
     justify-items: start;
     padding: 0 0 12px;
     border-right: 0;
-    border-bottom: 1px solid #d3e2d8;
+    border-bottom: 1px solid var(--green-line);
   }
 
   .result-actions {

@@ -28,7 +28,7 @@ const auth = useAuthStore()
   min-height: 100vh;
   padding: 24px;
   background:
-    radial-gradient(circle at 50% 20%, rgb(220 235 226 / 65%), transparent 34%),
+    radial-gradient(circle at 50% 20%, var(--glow-b), transparent 34%),
     var(--bg);
   text-align: center;
 }

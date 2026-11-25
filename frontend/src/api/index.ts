@@ -82,6 +82,8 @@ export const readingApi = {
     http
       .post<ReadingCompleteResponse>(`/reading/articles/${id}/complete`, body)
       .then((r) => r.data),
+  saveProgress: (id: number, scrollPercent: number) =>
+    http.post(`/reading/articles/${id}/progress`, { scrollPercent }),
 }
 
 export const planApi = {

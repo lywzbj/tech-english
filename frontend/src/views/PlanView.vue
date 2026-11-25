@@ -259,7 +259,7 @@ onMounted(load)
   padding: 11px 8px 9px;
   border: 1px solid var(--line);
   border-radius: 12px;
-  background: rgb(255 253 248 / 60%);
+  background: color-mix(in srgb, var(--surface) 60%, transparent);
   color: var(--muted);
   cursor: default;
 }
@@ -283,7 +283,7 @@ onMounted(load)
 
 .day-chip.today {
   border-color: var(--green-2);
-  background: var(--green);
+  background: var(--green-solid);
   color: #fff;
   box-shadow: 0 8px 20px rgb(36 92 67 / 16%);
 }
@@ -295,7 +295,7 @@ onMounted(load)
 
 .day-chip.complete:not(.today) {
   background: var(--green-3);
-  border-color: #c9dfd1;
+  border-color: var(--green-line);
 }
 
 .plan-grid {
@@ -347,13 +347,13 @@ onMounted(load)
 }
 
 .plan-task-icon.review {
-  background: #e9f1f6;
+  background: var(--blue-soft);
   color: var(--blue);
 }
 
 .plan-task-icon.grammar {
   background: var(--amber-soft);
-  color: #8d4d1d;
+  color: var(--amber-text);
 }
 
 .plan-task-icon.reading {
@@ -411,12 +411,13 @@ onMounted(load)
 
 .principle {
   padding: 22px;
-  background: linear-gradient(145deg, #1f4431, #173426);
-  color: #eef5ef;
+  border: 1px solid var(--hero-ring);
+  background: linear-gradient(145deg, var(--hero-1), var(--hero-2));
+  color: var(--hero-ink);
 }
 
 .principle .eyebrow {
-  color: #a8c8b3;
+  color: var(--hero-kicker);
 }
 
 .principle h2 {

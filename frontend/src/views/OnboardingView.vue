@@ -212,8 +212,8 @@ async function submit() {
   min-height: 100vh;
   padding: 24px clamp(18px, 4vw, 60px) 48px;
   background:
-    radial-gradient(circle at 92% 4%, rgb(220 235 226 / 70%), transparent 30%),
-    radial-gradient(circle at 0% 80%, rgb(247 231 215 / 55%), transparent 34%),
+    radial-gradient(circle at 92% 4%, var(--glow-b), transparent 30%),
+    radial-gradient(circle at 0% 80%, var(--glow-a), transparent 34%),
     var(--bg);
 }
 
@@ -237,7 +237,7 @@ async function submit() {
   width: 40px;
   height: 40px;
   border-radius: 12px;
-  background: var(--green);
+  background: var(--green-solid);
   color: #fff;
   font-family: var(--font-reading);
   font-size: 14px;
@@ -402,7 +402,7 @@ async function submit() {
 
 .band-option.active {
   border-color: var(--green);
-  background: var(--green);
+  background: var(--green-solid);
   color: #fff;
   box-shadow: 0 8px 20px rgb(36 92 67 / 18%);
 }
@@ -430,10 +430,10 @@ async function submit() {
   gap: 3px;
   margin-top: 22px;
   padding: 13px 15px;
-  border: 1px solid #ecd5be;
+  border: 1px solid var(--amber-line);
   border-radius: 12px;
   background: var(--amber-soft);
-  color: #7e4a21;
+  color: var(--amber-text);
   font-size: 11px;
   line-height: 1.65;
 }

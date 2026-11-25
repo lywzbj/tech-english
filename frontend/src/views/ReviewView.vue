@@ -294,7 +294,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
   border: 1px solid var(--line);
   border-radius: 24px;
   background:
-    radial-gradient(circle at 96% 0%, rgb(220 235 226 / 55%), transparent 28%),
+    radial-gradient(circle at 96% 0%, var(--glow-b), transparent 28%),
     var(--surface);
   box-shadow: var(--shadow-md);
   transition: 220ms ease;
@@ -483,22 +483,22 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
 }
 
 .rating-button.again:hover {
-  border-color: #e0bdb9;
+  border-color: var(--rose-line);
   color: var(--rose);
 }
 
 .rating-button.hard:hover {
-  border-color: #e5cfb7;
-  color: #9b652e;
+  border-color: var(--amber-line);
+  color: var(--amber-text);
 }
 
 .rating-button.good:hover {
-  border-color: #b8d3c2;
+  border-color: var(--green-line);
   color: var(--green);
 }
 
 .rating-button.easy:hover {
-  border-color: #b7cade;
+  border-color: var(--blue-line);
   color: var(--blue);
 }
 

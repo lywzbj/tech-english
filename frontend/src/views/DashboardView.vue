@@ -11,6 +11,7 @@ import type { EChartsOption } from 'echarts'
 import VChart from 'vue-echarts'
 import { dashboardApi, grammarApi, planApi } from '@/api'
 import { errorMessage } from '@/utils/error'
+import { useTheme } from '@/composables/useTheme'
 import type { Dashboard, Task } from '@/types/api'
 
 use([RadarChart, CanvasRenderer])
@@ -34,28 +35,47 @@ const progress = computed(() => {
   return Math.round((s.tasksCompleted / s.tasksTotal) * 100)
 })
 
-const skillOption = computed<EChartsOption>(() => ({
-  radar: {
-    indicator: skills.value.map((skill) => ({ name: skill.label, max: 100 })),
-    radius: '63%',
-    splitNumber: 4,
-    axisName: { color: '#6f7b71', fontSize: 11 },
-    splitLine: { lineStyle: { color: '#e4ded0' } },
-    splitArea: { show: false },
-    axisLine: { lineStyle: { color: '#e4ded0' } },
-  },
-  series: [
-    {
-      type: 'radar',
-      symbol: 'circle',
-      symbolSize: 5,
-      lineStyle: { color: '#245c43', width: 2 },
-      itemStyle: { color: '#245c43' },
-      areaStyle: { color: 'rgba(36, 92, 67, 0.16)' },
-      data: [{ value: skills.value.map((skill) => skill.value), name: '能力' }],
-    },
-  ],
+const { current: themeId } = useTheme()
+
+/** echarts paints to canvas, so colors are read from the active skin's CSS tokens. */
+function cssToken(name: string, fallback: string) {
+  const value = getComputedStyle(document.documentElement).getPropertyValue(name).trim()
+  return value || fallback
+}
+
+// themeId is part of the result so switching skins recomputes the chart option.
+const radarColors = computed(() => ({
+  theme: themeId.value,
+  muted: cssToken('--muted', '#67746a'),
+  line: cssToken('--line', '#e3e7e3'),
+  green: cssToken('--green', '#245c43'),
 }))
+
+const skillOption = computed<EChartsOption>(() => {
+  const ink = radarColors.value
+  return {
+    radar: {
+      indicator: skills.value.map((skill) => ({ name: skill.label, max: 100 })),
+      radius: '63%',
+      splitNumber: 4,
+      axisName: { color: ink.muted, fontSize: 11 },
+      splitLine: { lineStyle: { color: ink.line } },
+      splitArea: { show: false },
+      axisLine: { lineStyle: { color: ink.line } },
+    },
+    series: [
+      {
+        type: 'radar',
+        symbol: 'circle',
+        symbolSize: 5,
+        lineStyle: { color: ink.green, width: 2 },
+        itemStyle: { color: ink.green },
+        areaStyle: { color: ink.green, opacity: 0.16 },
+        data: [{ value: skills.value.map((skill) => skill.value), name: '能力' }],
+      },
+    ],
+  }
+})
 
 function iconFor(task: Task) {
   if (task.type === 'REVIEW') return Collection
@@ -338,7 +358,7 @@ onMounted(load)
   padding: 15px 17px;
   border: 1px solid var(--line);
   border-radius: 14px;
-  background: rgb(255 253 248 / 68%);
+  background: color-mix(in srgb, var(--surface) 68%, transparent);
 }
 
 .day-progress-head {
@@ -479,17 +499,17 @@ onMounted(load)
 }
 
 .task-icon.review {
-  background: #e9f1f6;
+  background: var(--blue-soft);
   color: var(--blue);
 }
 
 .task-icon.grammar {
-  background: #f7e7d7;
+  background: var(--amber-soft);
   color: var(--amber);
 }
 
 .task-icon.reading {
-  background: #e7f0e9;
+  background: var(--green-soft);
   color: var(--green);
 }
 
@@ -546,15 +566,16 @@ onMounted(load)
 .focus-card {
   padding: 26px;
   border-radius: var(--radius);
+  border: 1px solid var(--hero-ring);
   background:
-    radial-gradient(circle at 90% 10%, rgb(137 181 151 / 28%), transparent 38%),
-    linear-gradient(150deg, #1e4431, #173627);
-  color: #eef5ef;
+    radial-gradient(circle at 90% 10%, var(--hero-glow), transparent 38%),
+    linear-gradient(150deg, var(--hero-1), var(--hero-2));
+  color: var(--hero-ink);
   box-shadow: var(--shadow-md);
 }
 
 .focus-kicker {
-  color: #a8c8b3;
+  color: var(--hero-kicker);
   font-size: 9px;
   font-weight: 800;
   letter-spacing: 0.18em;
@@ -566,7 +587,7 @@ onMounted(load)
   padding: 3px 8px;
   border: 1px solid rgb(255 255 255 / 18%);
   border-radius: 999px;
-  color: #c6ddcd;
+  color: var(--hero-chip);
   font-size: 9px;
   letter-spacing: 0.08em;
 }
@@ -666,7 +687,7 @@ onMounted(load)
   padding: 22px 26px;
   border: 1px solid var(--line);
   border-radius: var(--radius);
-  background: rgb(255 253 248 / 55%);
+  background: color-mix(in srgb, var(--surface) 55%, transparent);
 }
 
 .bottom-copy h2 {

@@ -5,6 +5,7 @@ import dayjs from 'dayjs'
 import 'dayjs/locale/zh-cn'
 import { Menu } from '@element-plus/icons-vue'
 import SidebarNav from '@/components/SidebarNav.vue'
+import ThemeSwitcher from '@/components/ThemeSwitcher.vue'
 import { useAuthStore } from '@/stores/auth'
 
 dayjs.locale('zh-cn')
@@ -48,6 +49,7 @@ const target = computed(() =>
           </div>
         </div>
         <div class="topbar-right">
+          <ThemeSwitcher />
           <span class="date">{{ today }}</span>
           <span class="target">{{ target }}</span>
           <span class="avatar">{{ auth.displayName.slice(0, 1).toUpperCase() }}</span>
@@ -90,8 +92,8 @@ const target = computed(() =>
   gap: 20px;
   min-height: 80px;
   padding: 14px 34px;
-  border-bottom: 1px solid rgb(228 222 208 / 80%);
-  background: rgb(243 240 231 / 82%);
+  border-bottom: 1px solid var(--header-line);
+  background: var(--header-bg);
   backdrop-filter: blur(18px);
 }
 
@@ -130,10 +132,10 @@ const target = computed(() =>
 
 .target {
   padding: 5px 10px;
-  border: 1px solid #d6e4da;
+  border: 1px solid var(--green-line);
   border-radius: 999px;
-  background: #e8f1eb;
-  color: #245c43;
+  background: var(--green-soft);
+  color: var(--green);
   font-size: 11px;
   font-weight: 700;
   white-space: nowrap;
@@ -145,7 +147,7 @@ const target = computed(() =>
   width: 34px;
   height: 34px;
   border-radius: 10px;
-  background: var(--green);
+  background: var(--green-solid);
   color: #fff;
   font-size: 12px;
   font-weight: 800;

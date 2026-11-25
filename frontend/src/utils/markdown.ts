@@ -53,7 +53,7 @@ const md: MarkdownIt = new MarkdownIt({
 })
 
 md.use(anchor, {
-  level: [2, 3],
+  level: [2, 3, 4, 5],
   slugify: (value: string) =>
     `h-${value
       .trim()
@@ -80,7 +80,7 @@ export function extractToc(source: string): { id: string; text: string; level: n
       continue
     }
     if (inCode) continue
-    const match = /^(#{2,3})\s+(.+)$/.exec(line.trim())
+    const match = /^(#{2,5})\s+(.+)$/.exec(line.trim())
     if (!match) continue
     const text = match[2].replace(/[*_`]/g, '').trim()
     const id = `h-${text

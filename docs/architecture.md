@@ -39,6 +39,7 @@ SQLite (default) / MySQL 8 (mysql profile)
 - `prompts/explain/v1.md` is versioned. `AiCallLog` records provider, model, prompt version, latency, status and input/output token usage from Spring AI metadata.
 - Requests use the configured `AI_TIMEOUT_SECONDS` read timeout and one Spring AI retry for transient failures.
 - Imported text is treated as untrusted data; it is never merged into the system prompt as instructions.
+- Imported markdown is normalized at write time (`MarkdownNormalizer`): empty HTML anchors (`<a id="s2-foo"></a>`) and comments are stripped, and in-document `#anchor` links are retargeted to the heading ids markdown-it-anchor generates (levels 2-5, slug contract in frontend `utils/markdown.ts`). Clean markdown is the single stored source; the renderer keeps `html:false`.
 - Markdown is sanitized in the browser with DOMPurify. URL import blocks loopback, private and link-local addresses.
 
 ## Vector index
@@ -72,6 +73,7 @@ Flexible content such as exercises, options and examples is stored as JSON strin
 - Article markdown is rendered with `markdown-it` + `markdown-it-anchor`, highlighted with a small set of highlight.js languages, and sanitized with DOMPurify.
 - `useTaskCompletion` marks the matching daily task complete after grammar, vocabulary or reading work.
 - `SearchView` queries `/api/v1/search`, links article hits to the reader and vocabulary hits to the filtered word bank.
+- Skins: three themes (white day / pale-yellow eye-comfort / black night) selected via `ThemeSwitcher` in the topbar. All colors live in `styles/main.css` as CSS custom properties switched by `html[data-theme]`; `composables/useTheme.ts` persists the choice and toggles Element Plus's `dark` class (plus its own dark css-vars import) at night. Colors must be added as tokens here — components must not hardcode hex.
 
 ## Deliberate omissions
 

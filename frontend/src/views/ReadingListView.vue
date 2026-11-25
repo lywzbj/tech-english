@@ -1,11 +1,15 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { ElMessage } from 'element-plus'
-import { Link, Plus, Reading } from '@element-plus/icons-vue'
+import { ElMessage, type UploadFile } from 'element-plus'
+import { Link, Plus, Reading, UploadFilled } from '@element-plus/icons-vue'
 import { readingApi } from '@/api'
 import { errorMessage } from '@/utils/error'
 import type { ReadingArticleSummary } from '@/types/api'
+
+const MAX_FILE_BYTES = 1024 * 1024
+// Keep in sync with ImportArticleRequest @Size(max = 200000) on the backend.
+const MAX_CONTENT_CHARS = 200000
 
 const router = useRouter()
 const articles = ref<ReadingArticleSummary[]>([])
@@ -13,7 +17,7 @@ const loading = ref(true)
 const error = ref('')
 const activeType = ref('ALL')
 const dialogOpen = ref(false)
-const importMode = ref<'text' | 'url'>('text')
+const importMode = ref<'file' | 'text' | 'url'>('file')
 const importing = ref(false)
 
 const form = ref({
@@ -24,6 +28,56 @@ const form = ref({
   sourceType: 'CUSTOM',
 })
 const urlForm = ref({ url: '', title: '' })
+
+const fileForm = ref({ title: '', subtitle: '', sourceType: 'CUSTOM' })
+const fileName = ref('')
+const fileContent = ref('')
+const fileBytes = ref(0)
+
+function resetFileSelection() {
+  fileForm.value = { title: '', subtitle: '', sourceType: 'CUSTOM' }
+  fileName.value = ''
+  fileContent.value = ''
+  fileBytes.value = 0
+}
+
+/** Takes over a picked file: validates it and pre-fills title from its leading H1 or its name. */
+async function onFilePicked(uploadFile: UploadFile) {
+  const raw = uploadFile.raw
+  if (!raw) return
+  if (!/\.(md|markdown|txt)$/i.test(raw.name)) {
+    ElMessage.warning('只支持 .md / .markdown / .txt 文件')
+    return
+  }
+  if (raw.size > MAX_FILE_BYTES) {
+    ElMessage.warning('文件超过 1 MB，请拆分后再导入')
+    return
+  }
+  let text = await raw.text()
+  const lines = text.split(/\r?\n/)
+  const firstIndex = lines.findIndex((line) => line.trim() !== '')
+  let title = raw.name.replace(/\.(md|markdown|txt)$/i, '')
+  if (firstIndex >= 0 && /^#\s+/.test(lines[firstIndex])) {
+    title = lines[firstIndex].replace(/^#\s+/, '').trim() || title
+    lines.splice(firstIndex, 1)
+    while (lines.length > 0 && lines[0].trim() === '') {
+      lines.shift()
+    }
+    text = lines.join('\n')
+  }
+  if (text.trim().length < 80) {
+    ElMessage.warning('文件正文太短，至少需要一段完整内容')
+    return
+  }
+  if (text.length > MAX_CONTENT_CHARS) {
+    ElMessage.warning(`正文约 ${text.length} 字符，超过 ${MAX_CONTENT_CHARS} 上限`)
+    return
+  }
+  fileName.value = raw.name
+  fileBytes.value = raw.size
+  fileContent.value = text
+  fileForm.value.title = title.slice(0, 200)
+}
 
 const filters = [
   { value: 'ALL', label: '全部' },
@@ -50,7 +104,8 @@ function openArticle(article: ReadingArticleSummary) {
 function openImport() {
   form.value = { title: '', subtitle: '', contentMd: '', sourceUrl: '', sourceType: 'CUSTOM' }
   urlForm.value = { url: '', title: '' }
-  importMode.value = 'text'
+  resetFileSelection()
+  importMode.value = 'file'
   dialogOpen.value = true
 }
 
@@ -66,6 +121,21 @@ async function importArticle() {
       detail = await readingApi.importUrl({
         url: urlForm.value.url.trim(),
         title: urlForm.value.title.trim() || undefined,
+      })
+    } else if (importMode.value === 'file') {
+      if (!fileContent.value) {
+        ElMessage.warning('请先选择或拖入一个 Markdown 文件')
+        return
+      }
+      if (!fileForm.value.title.trim()) {
+        ElMessage.warning('请填写文章标题')
+        return
+      }
+      detail = await readingApi.importText({
+        title: fileForm.value.title.trim(),
+        subtitle: fileForm.value.subtitle.trim() || `来自文件 ${fileName.value}`,
+        contentMd: fileContent.value,
+        sourceType: fileForm.value.sourceType,
       })
     } else {
       if (!form.value.title.trim() || form.value.contentMd.trim().length < 80) {
@@ -212,6 +282,44 @@ onMounted(load)
 
     <el-dialog v-model="dialogOpen" title="导入阅读材料" width="min(720px, 94vw)">
       <el-tabs v-model="importMode">
+        <el-tab-pane label="上传 Markdown 文件" name="file">
+          <div class="url-note">
+            <el-icon><UploadFilled /></el-icon>
+            <p>支持 .md / .markdown / .txt（UTF-8 编码，1 MB 以内）。文件若以 # 标题行开头，会自动作为文章标题。</p>
+          </div>
+          <el-upload
+            drag
+            :auto-upload="false"
+            :show-file-list="false"
+            accept=".md,.markdown,.txt"
+            :on-change="onFilePicked"
+          >
+            <el-icon class="el-icon--upload"><UploadFilled /></el-icon>
+            <div class="el-upload__text">把 Markdown 文件拖到这里，或<em>点击选择</em></div>
+          </el-upload>
+          <div v-if="fileName" class="picked-file">
+            <strong>{{ fileName }}</strong>
+            <span>{{ (fileBytes / 1024).toFixed(1) }} KB · 正文 {{ fileContent.length }} 字符</span>
+            <el-button link type="danger" size="small" @click="resetFileSelection">移除</el-button>
+          </div>
+          <el-form v-if="fileContent" label-position="top" class="file-form">
+            <div class="form-row">
+              <el-form-item label="标题">
+                <el-input v-model="fileForm.title" maxlength="200" />
+              </el-form-item>
+              <el-form-item label="副标题（可选）">
+                <el-input v-model="fileForm.subtitle" placeholder="留空则显示“来自文件 xxx.md”" />
+              </el-form-item>
+            </div>
+            <el-form-item label="类型">
+              <el-select v-model="fileForm.sourceType" style="width: 100%">
+                <el-option label="我的导入" value="CUSTOM" />
+                <el-option label="雅思学术" value="IELTS" />
+                <el-option label="技术文档" value="TECH" />
+              </el-select>
+            </el-form-item>
+          </el-form>
+        </el-tab-pane>
         <el-tab-pane label="粘贴文本 / Markdown" name="text">
           <el-form label-position="top">
             <div class="form-row">
@@ -280,7 +388,7 @@ onMounted(load)
 .read-stat {
   color: var(--muted);
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: 12px;
 }
 
 .featured {
@@ -292,10 +400,11 @@ onMounted(load)
   padding: clamp(26px, 4vw, 44px);
   overflow: hidden;
   border-radius: var(--radius-lg);
+  border: 1px solid var(--hero-ring);
   background:
-    radial-gradient(circle at 88% 18%, rgb(137 181 151 / 28%), transparent 36%),
-    linear-gradient(135deg, #1e4230, #173426 64%, #12291e);
-  color: #eef5ef;
+    radial-gradient(circle at 88% 18%, var(--hero-glow), transparent 36%),
+    linear-gradient(135deg, var(--hero-1), var(--hero-2) 64%, var(--hero-3));
+  color: var(--hero-ink);
   box-shadow: var(--shadow-md);
 }
 
@@ -327,8 +436,8 @@ onMounted(load)
 .featured-copy > p {
   max-width: 560px;
   margin-top: 12px;
-  color: rgb(238 245 239 / 62%);
-  font-size: 12px;
+  color: rgb(238 245 239 / 66%);
+  font-size: 14px;
   line-height: 1.75;
 }
 
@@ -338,9 +447,9 @@ onMounted(load)
   flex-wrap: wrap;
   gap: 9px;
   margin: 16px 0 22px;
-  color: rgb(238 245 239 / 42%);
+  color: rgb(238 245 239 / 52%);
   font-family: var(--font-mono);
-  font-size: 9px;
+  font-size: 11px;
 }
 
 .featured-meta .dot {
@@ -411,12 +520,12 @@ onMounted(load)
 }
 
 .filter {
-  padding: 6px 12px;
+  padding: 7px 14px;
   border: 1px solid transparent;
   border-radius: 999px;
   background: transparent;
   color: var(--muted);
-  font-size: 10px;
+  font-size: 13px;
   cursor: pointer;
 }
 
@@ -434,7 +543,7 @@ onMounted(load)
 .list-count {
   color: var(--faint);
   font-family: var(--font-mono);
-  font-size: 9px;
+  font-size: 12px;
 }
 
 .article-grid {
@@ -454,12 +563,12 @@ onMounted(load)
 
 .article-card:hover {
   transform: translateY(-3px);
-  border-color: #bfd4c5;
+  border-color: var(--line-strong);
   box-shadow: var(--shadow-md);
 }
 
 .article-card.read {
-  background: #fbfaf5;
+  background: var(--surface-2);
 }
 
 .article-top {
@@ -469,17 +578,17 @@ onMounted(load)
 }
 
 .source-tag {
-  padding: 3px 6px;
-  border-radius: 4px;
+  padding: 4px 8px;
+  border-radius: 5px;
   background: var(--surface-3);
   color: var(--muted);
-  font-size: 7px;
+  font-size: 9px;
   font-weight: 800;
   letter-spacing: 0.09em;
 }
 
 .source-tag.ielts {
-  background: #e9f1f6;
+  background: var(--blue-soft);
   color: var(--blue);
 }
 
@@ -490,13 +599,13 @@ onMounted(load)
 
 .source-tag.custom {
   background: var(--amber-soft);
-  color: #8d4d1d;
+  color: var(--amber-text);
 }
 
 .read-tag,
 .unread-tag {
   margin-left: auto;
-  font-size: 8px;
+  font-size: 11px;
 }
 
 .read-tag {
@@ -519,7 +628,7 @@ onMounted(load)
 .article-sub {
   margin-top: 4px;
   color: var(--muted);
-  font-size: 10px;
+  font-size: 12px;
   line-height: 1.5;
 }
 
@@ -528,7 +637,7 @@ onMounted(load)
   margin-top: 12px;
   overflow: hidden;
   color: var(--muted);
-  font-size: 10px;
+  font-size: 13px;
   line-height: 1.65;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 3;
@@ -542,7 +651,7 @@ onMounted(load)
   padding-top: 16px;
   color: var(--faint);
   font-family: var(--font-mono);
-  font-size: 8px;
+  font-size: 11px;
 }
 
 .article-arrow {
@@ -565,7 +674,7 @@ onMounted(load)
   border-radius: 9px;
   background: var(--surface-2);
   color: var(--muted);
-  font-size: 10px;
+  font-size: 12px;
   line-height: 1.6;
 }
 
@@ -573,6 +682,32 @@ onMounted(load)
   flex: 0 0 auto;
   margin-top: 2px;
   color: var(--green);
+}
+
+.picked-file {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 12px;
+  padding: 10px 14px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--surface-2);
+  font-size: 13px;
+}
+
+.picked-file span {
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+
+.picked-file .el-button {
+  margin-left: auto;
+}
+
+.file-form {
+  margin-top: 14px;
 }
 
 @media (max-width: 1100px) {

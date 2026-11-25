@@ -14,7 +14,9 @@ export default defineConfig({
     port: 5173,
     proxy: {
       '/api': {
-        target: 'http://localhost:8080',
+        // Override when the 8080 backend belongs to someone else, e.g.
+        // VITE_PROXY_TARGET=http://localhost:8081 npm run dev
+        target: process.env.VITE_PROXY_TARGET ?? 'http://localhost:8080',
         changeOrigin: true,
       },
     },

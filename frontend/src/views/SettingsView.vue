@@ -288,7 +288,7 @@ onMounted(async () => {
 
 .band-btn.active {
   border-color: var(--green);
-  background: var(--green);
+  background: var(--green-solid);
   color: #fff;
 }
 

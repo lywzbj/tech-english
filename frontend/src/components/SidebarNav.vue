@@ -112,10 +112,10 @@ async function logout() {
   flex-direction: column;
   height: 100%;
   padding: 22px 16px 18px;
-  color: #eef5ef;
+  color: var(--side-ink);
   background:
-    radial-gradient(circle at 20% 0%, rgb(89 137 108 / 35%), transparent 42%),
-    linear-gradient(168deg, #1b3528 0%, #162a20 60%, #12231b 100%);
+    radial-gradient(circle at 20% 0%, var(--side-glow), transparent 42%),
+    linear-gradient(168deg, var(--side-1) 0%, var(--side-2) 60%, var(--side-3) 100%);
 }
 
 .brand {

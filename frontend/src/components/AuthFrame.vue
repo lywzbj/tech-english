@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import ThemeSwitcher from '@/components/ThemeSwitcher.vue'
+
 defineProps<{
   eyebrow: string
   title: string
@@ -43,6 +45,9 @@ defineProps<{
     </section>
 
     <section class="auth-form-wrap">
+      <div class="auth-theme">
+        <ThemeSwitcher />
+      </div>
       <div class="form-card">
         <p class="eyebrow">{{ eyebrow }}</p>
         <h2>{{ title }}</h2>
@@ -66,11 +71,11 @@ defineProps<{
   flex-direction: column;
   justify-content: space-between;
   padding: 42px clamp(36px, 6vw, 86px) 34px;
-  color: #eef5ef;
+  color: var(--hero-ink);
   background:
-    radial-gradient(circle at 78% 8%, rgb(137 181 151 / 28%), transparent 34%),
+    radial-gradient(circle at 78% 8%, var(--hero-glow), transparent 34%),
     radial-gradient(circle at 10% 90%, rgb(201 120 56 / 17%), transparent 30%),
-    linear-gradient(150deg, #173224 0%, #1b3b2b 48%, #11251b 100%);
+    linear-gradient(150deg, var(--hero-2) 0%, var(--hero-1) 48%, var(--hero-3) 100%);
 }
 
 .brand {
@@ -178,9 +183,17 @@ h1 {
 }
 
 .auth-form-wrap {
+  position: relative;
   display: grid;
   place-items: center;
   padding: 40px 24px;
+}
+
+.auth-theme {
+  position: absolute;
+  z-index: 5;
+  top: 20px;
+  right: 26px;
 }
 
 .form-card {
@@ -188,9 +201,8 @@ h1 {
   padding: clamp(28px, 4vw, 42px);
   border: 1px solid var(--line);
   border-radius: 26px;
-  background: rgb(255 253 248 / 88%);
+  background: var(--surface);
   box-shadow: var(--shadow-md);
-  backdrop-filter: blur(12px);
   animation: rise-in 0.55s ease both;
 }
 

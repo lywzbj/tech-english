@@ -179,6 +179,8 @@ export interface ReadingArticleDetail {
   article: ReadingArticleSummary
   contentMd: string
   questions: ReadingQuestion[]
+  /** 0-100, last saved scroll position for resuming the article. */
+  scrollPercent: number
 }
 
 export interface ReadingListResponse {
