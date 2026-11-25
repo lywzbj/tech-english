@@ -25,6 +25,7 @@ public class ReadingService {
     private final ReadingArticleRepository articleRepository;
     private final ReadingQuestionRepository questionRepository;
     private final ReadingSessionRepository sessionRepository;
+    private final ReadingProgressRepository progressRepository;
     private final UrlArticleImporter urlArticleImporter;
     private final LearningEventService learningEventService;
     private final ApplicationEventPublisher eventPublisher;
@@ -62,13 +63,36 @@ public class ReadingService {
         ReadingArticle article = articleRepository.findById(articleId)
                 .orElseThrow(() -> ApiException.notFound("ARTICLE_NOT_FOUND", "文章不存在"));
         boolean read = sessionRepository.existsByUserIdAndArticleId(userId, articleId);
+        int scrollPercent = progressRepository.findByUserIdAndArticleId(userId, articleId)
+                .map(ReadingProgress::getScrollPercent)
+                .orElse(0);
         return new ReadingDtos.ArticleDetail(
                 toSummary(article, read),
                 article.getContentMd(),
                 questionRepository.findByArticleIdOrderBySortOrderAsc(articleId).stream()
                         .map(this::toQuestion)
-                        .toList()
+                        .toList(),
+                scrollPercent
         );
+    }
+
+    @Transactional
+    public void saveProgress(Long userId, Long articleId, int scrollPercent) {
+        articleRepository.findById(articleId)
+                .orElseThrow(() -> ApiException.notFound("ARTICLE_NOT_FOUND", "文章不存在"));
+        upsertProgress(userId, articleId, scrollPercent);
+    }
+
+    private void upsertProgress(Long userId, Long articleId, int scrollPercent) {
+        ReadingProgress progress = progressRepository.findByUserIdAndArticleId(userId, articleId)
+                .orElseGet(() -> {
+                    ReadingProgress created = new ReadingProgress();
+                    created.setUserId(userId);
+                    created.setArticleId(articleId);
+                    return created;
+                });
+        progress.setScrollPercent(scrollPercent);
+        progressRepository.save(progress);
     }
 
     @Transactional
@@ -81,7 +105,7 @@ public class ReadingService {
                 throw ApiException.badRequest("INVALID_SOURCE_TYPE", "文章类型不正确");
             }
         }
-        String content = request.contentMd().trim();
+        String content = MarkdownNormalizer.normalize(request.contentMd().trim());
         if (content.length() < 80) {
             throw ApiException.badRequest("CONTENT_TOO_SHORT", "文章内容太短，至少粘贴一段完整文本");
         }
@@ -142,6 +166,7 @@ public class ReadingService {
         session.setQuestionsCorrect(correct);
         session.setQuestionsTotal(questions.size());
         sessionRepository.save(session);
+        upsertProgress(userId, articleId, 0);
         learningEventService.record(userId, "ARTICLE_COMPLETED", "ARTICLE", article.getId(),
                 Map.of("minutes", request.minutes(), "correct", correct, "total", questions.size()));
         double score = questions.isEmpty() ? 100 : correct * 100.0 / questions.size();

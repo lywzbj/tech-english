@@ -38,7 +38,8 @@ public final class ReadingDtos {
     public record ArticleDetail(
             ArticleSummary article,
             String contentMd,
-            List<QuestionDto> questions
+            List<QuestionDto> questions,
+            int scrollPercent
     ) {
     }
 
@@ -66,6 +67,11 @@ public final class ReadingDtos {
     public record CompleteRequest(
             @Min(1) @Max(240) int minutes,
             @Valid @Size(max = 50) List<AnswerDto> answers
+    ) {
+    }
+
+    public record ProgressRequest(
+            @Min(0) @Max(100) int scrollPercent
     ) {
     }
 

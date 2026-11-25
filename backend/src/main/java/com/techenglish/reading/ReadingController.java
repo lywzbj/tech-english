@@ -43,6 +43,13 @@ public class ReadingController {
         return readingService.importUrl(user.id(), request);
     }
 
+    @PostMapping("/articles/{id}/progress")
+    public void saveProgress(@AuthenticationPrincipal AuthUser user,
+                             @PathVariable Long id,
+                             @Valid @RequestBody ReadingDtos.ProgressRequest request) {
+        readingService.saveProgress(user.id(), id, request.scrollPercent());
+    }
+
     @PostMapping("/articles/{id}/complete")
     public ReadingDtos.CompleteResponse complete(@AuthenticationPrincipal AuthUser user,
                                                  @PathVariable Long id,

@@ -8,7 +8,7 @@
 - Vocabulary SRS with SM-2.
 - Reading lab with IELTS-style and technical articles, TOC, word lookup, AI explanation and comprehension questions.
 - Daily plan and dashboard.
-- Mock/DeepSeek-compatible AI gateway.
+- Spring AI (ChatClient) gateway with mock and DeepSeek/OpenAI-compatible models.
 - SQLite default runtime (zero setup) with opt-in MySQL 8 profile.
 - Local vector search over article chunks and vocabulary, with sqlite-vec KNN and Java cosine fallback.
 

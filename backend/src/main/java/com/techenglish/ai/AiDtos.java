@@ -23,6 +23,18 @@ public final class AiDtos {
     public record VocabHint(String word, String meaning, String note) {
     }
 
+    /**
+     * Mirror of the JSON object requested by prompts/explain/v1.md. Used as the
+     * Spring AI structured-output target.
+     */
+    public record ExplainPayload(
+            String translation,
+            String explanation,
+            List<GrammarPoint> grammarPoints,
+            List<VocabHint> vocabulary
+    ) {
+    }
+
     public record ExplainResponse(
             String provider,
             String model,

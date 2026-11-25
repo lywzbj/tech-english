@@ -10,6 +10,8 @@ import jakarta.persistence.Table;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
+import org.hibernate.annotations.SQLDelete;
+import org.hibernate.annotations.SQLRestriction;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -19,6 +21,8 @@ import java.time.LocalDate;
 @NoArgsConstructor
 @Entity
 @Table(name = "learner_profile")
+@SQLDelete(sql = "UPDATE learner_profile SET deleted = 1 WHERE id = ?")
+@SQLRestriction("deleted = 0")
 public class LearnerProfile extends BaseEntity {
 
     @OneToOne(fetch = FetchType.LAZY, optional = false)

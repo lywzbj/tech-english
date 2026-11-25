@@ -15,7 +15,7 @@ Spring Boot 3.5 / Java 17
   ├─ plan            daily tasks, completion
   ├─ dashboard       aggregate learning state
   ├─ vector          embeddings, sqlite-vec KNN, keyword fallback
-  ├─ ai              OpenAI-compatible gateway, prompt + validation + logs
+  ├─ ai              Spring AI ChatClient gateway, prompt + validation + logs
   └─ seed            first-run content importer
 SQLite (default) / MySQL 8 (mysql profile)
 ```
@@ -32,9 +32,12 @@ SQLite (default) / MySQL 8 (mysql profile)
 
 ## AI gateway
 
-- `AiGateway` selects `mock` by default or an OpenAI-compatible provider when `AI_PROVIDER=deepseek`.
-- `OpenAiCompatibleProvider` uses the `/v1/chat/completions` surface and requests JSON objects.
-- `prompts/explain/v1.md` is versioned. `AiCallLog` records provider, model, prompt version, latency and status.
+- `AiGateway` is the only place that calls a model. It uses Spring AI's `ChatClient`; `AiClientConfiguration` builds an `OpenAiChatModel` from `app.ai.*` for `AI_PROVIDER=deepseek|openai`.
+- The OpenAI starter auto-configuration is intentionally not used: it requires an API key at startup, while this app must run in mock mode with no key.
+- `AI_PROVIDER=mock` wires a `MockChatModel` (a Spring AI `ChatModel`) instead, so mock and remote share one code path.
+- Chat options request JSON mode (`response_format: json_object`). `BeanOutputConverter<ExplainPayload>` parses the reply and tolerates Markdown fences; malformed JSON degrades to plain text instead of failing the request.
+- `prompts/explain/v1.md` is versioned. `AiCallLog` records provider, model, prompt version, latency, status and input/output token usage from Spring AI metadata.
+- Requests use the configured `AI_TIMEOUT_SECONDS` read timeout and one Spring AI retry for transient failures.
 - Imported text is treated as untrusted data; it is never merged into the system prompt as instructions.
 - Markdown is sanitized in the browser with DOMPurify. URL import blocks loopback, private and link-local addresses.
 

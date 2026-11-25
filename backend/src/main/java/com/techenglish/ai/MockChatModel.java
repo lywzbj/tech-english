@@ -2,25 +2,38 @@ package com.techenglish.ai;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
-import org.springframework.stereotype.Component;
+import org.springframework.ai.chat.messages.AssistantMessage;
+import org.springframework.ai.chat.model.ChatModel;
+import org.springframework.ai.chat.model.ChatResponse;
+import org.springframework.ai.chat.model.Generation;
+import org.springframework.ai.chat.prompt.ChatOptions;
+import org.springframework.ai.chat.prompt.Prompt;
 
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
-@Component
+/**
+ * Offline demo model used when app.ai.provider is not a remote AI provider.
+ * It plugs into Spring AI so the gateway uses the same ChatClient code path
+ * with or without an API key.
+ */
 @RequiredArgsConstructor
-public class MockAiProvider implements AiProvider {
+public class MockChatModel implements ChatModel {
 
     private final ObjectMapper objectMapper;
 
     @Override
-    public String name() {
-        return "mock";
+    public ChatResponse call(Prompt prompt) {
+        return new ChatResponse(List.of(new Generation(new AssistantMessage(responseJson()))));
     }
 
     @Override
-    public String chat(String systemPrompt, String userPrompt, double temperature, int maxTokens) {
+    public ChatOptions getDefaultOptions() {
+        return ChatOptions.builder().build();
+    }
+
+    private String responseJson() {
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("translation", "演示模式：配置 AI_API_KEY 后可获得完整的上下文翻译。");
         result.put("explanation", "先找主语和谓语，再处理从句和修饰成分。技术英语里常见的难点是长名词短语、被动语态和条件句；拆成短句后再理解会更稳。");

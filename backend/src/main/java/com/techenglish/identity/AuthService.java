@@ -3,6 +3,7 @@ package com.techenglish.identity;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.techenglish.common.ApiException;
+import jakarta.persistence.EntityNotFoundException;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
@@ -44,6 +45,8 @@ public class AuthService {
     private final SecureRandom secureRandom = new SecureRandom();
 
     public boolean needsSetup() {
+        // @SQLRestriction on AppUser makes count() only see deleted = 0 rows, so a
+        // soft-deleted account releases the app for a new learner through setup.
         return userRepository.count() == 0;
     }
 
@@ -53,6 +56,9 @@ public class AuthService {
             throw ApiException.conflict("SETUP_COMPLETED", "账号已经初始化，请直接登录");
         }
         String email = request.email().trim().toLowerCase(Locale.ROOT);
+        if (userRepository.countByEmailIncludingDeleted(email) > 0) {
+            throw ApiException.conflict("EMAIL_TAKEN", "该邮箱已被旧账号（可能已删除）占用，请换一个邮箱");
+        }
         AppUser user = new AppUser();
         user.setEmail(email);
         user.setPasswordHash(passwordEncoder.encode(request.password()));
@@ -67,9 +73,13 @@ public class AuthService {
 
     @Transactional
     public IdentityDtos.AuthResponse login(IdentityDtos.LoginRequest request, HttpServletResponse response) {
+        // Soft-deleted accounts never surface here: the repository applies @SQLRestriction.
         AppUser user = userRepository.findByEmailIgnoreCase(request.email().trim())
                 .orElseThrow(() -> ApiException.unauthorized("邮箱或密码不正确"));
-        if (!user.isEnabled() || !passwordEncoder.matches(request.password(), user.getPasswordHash())) {
+        if (isDisabled(user)) {
+            throw ApiException.unauthorized("账户已被禁用");
+        }
+        if (!passwordEncoder.matches(request.password(), user.getPasswordHash())) {
             throw ApiException.unauthorized("邮箱或密码不正确");
         }
         profileRepository.findByUserId(user.getId()).orElseGet(() -> profileRepository.save(newProfile(user)));
@@ -92,6 +102,16 @@ public class AuthService {
         token.setRevoked(true);
         refreshTokenRepository.save(token);
         AppUser user = token.getUser();
+        try {
+            if (isDisabled(user)) {
+                clearRefreshCookie(response);
+                throw ApiException.unauthorized("账户已被禁用");
+            }
+        } catch (EntityNotFoundException ex) {
+            // The user was soft-deleted: @SQLRestriction hides the row from the lazy proxy.
+            clearRefreshCookie(response);
+            throw ApiException.unauthorized("登录已过期，请重新登录");
+        }
         profileRepository.findByUserId(user.getId()).orElseGet(() -> profileRepository.save(newProfile(user)));
         return issueAuth(user, response);
     }
@@ -171,6 +191,11 @@ public class AuthService {
                 toUser(user),
                 toProfile(profile)
         );
+    }
+
+    /** Disabled via the BaseEntity enableStatus bit (1) or the legacy enabled flag. Deleted users are filtered out before this check. */
+    private static boolean isDisabled(AppUser user) {
+        return Integer.valueOf(1).equals(user.getEnableStatus()) || !user.isEnabled();
     }
 
     private LearnerProfile newProfile(AppUser user) {

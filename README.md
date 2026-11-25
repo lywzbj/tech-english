@@ -13,7 +13,7 @@
 - 阅读实验室：4 篇原创文章（1 篇雅思风格 + 3 篇技术英语）、TOC、字号调整、选中词句、查词、AI 解释、阅读理解题、阅读记录。
 - 学习计划：按到期词汇、下一语法节点、未读文章生成今日任务；看板展示连续天数、本周投入、到期词、掌握度和今日任务。
 - 知识搜索：文章分段和词汇自动向量化，支持 sqlite-vec KNN 检索；扩展缺失时自动退回 Java 余弦。
-- AI 网关：OpenAI 兼容接口，默认 `mock` 演示模式，可配置 DeepSeek；结构化 JSON、日志、失败降级。
+- AI 网关：基于 Spring AI 的 ChatClient，默认 `mock` 演示模型，可配置 DeepSeek；JSON 结构化输出、token 用量日志、失败降级。
 - 双数据库：SQLite 默认（无需安装），MySQL 8 通过 `mysql` profile 启用；MySQL 用 Flyway，SQLite 用内置迁移器。
 - 安全与工程：JPA、统一错误处理、CORS、SSRF 防护、Markdown 清洗、SRS 单元测试、Spring 上下文和搜索集成测试。
 
@@ -29,11 +29,11 @@
 
 ## 技术栈
 
-- 后端：Java 17、Spring Boot 3.5.5、Spring MVC、Spring Security、Spring Data JPA、Flyway（MySQL）、Validation、Actuator、springdoc-openapi、WebClient。
+- 后端：Java 17、Spring Boot 3.5.15、Spring MVC、Spring Security、Spring Data JPA、Spring AI 1.1.8、Flyway（MySQL）、Validation、Actuator、springdoc-openapi、WebClient。
 - 前端：Vue 3.5、TypeScript 5.9、Vite 7、Element Plus、Pinia、Vue Router、Axios、ECharts、markdown-it、highlight.js、DOMPurify。
 - 数据库：SQLite（默认，Hibernate community dialect）或 MySQL 8.x；MySQL 使用 `utf8mb4_0900_ai_ci`。
 - 向量：sqlite-vec 0.1.9（可选扩展）+ 本地哈希嵌入；可切换 OpenAI 兼容 embeddings。
-- AI：DeepSeek 默认兼容接口；也支持任何 OpenAI Chat Completions 兼容服务。
+- AI：Spring AI `ChatClient` + OpenAI 兼容模型（DeepSeek 默认）；结构化输出和 token 统计由 Spring AI 处理。
 
 ## 环境要求
 
@@ -154,7 +154,7 @@ EMBEDDING_API_KEY=
 
 ## 4. AI 配置
 
-默认 `AI_PROVIDER=mock`，阅读页的 AI 解释会返回固定的演示内容，不会调用任何外部服务。
+AI 调用统一走 Spring AI：`ChatClient` 负责请求，`OpenAiChatModel` 负责 OpenAI Chat Completions 协议，`BeanOutputConverter` 负责把模型输出解析成 `ExplainPayload`。默认 `AI_PROVIDER=mock`，使用内置的 `MockChatModel` 返回固定演示内容，不会调用任何外部服务。
 
 切换 DeepSeek：
 
@@ -167,7 +167,9 @@ AI_MODEL=deepseek-chat
 
 重启后端。API Key 只存在服务端，前端 bundle 不会包含它。
 
-其他 OpenAI 兼容服务：把 `AI_BASE_URL` 指向其 `/v1` 兼容地址即可。
+其他 OpenAI 兼容服务：把 `AI_BASE_URL` 指向其 `/v1` 兼容地址即可。地址末尾的 `/v1` 会被自动去掉，再按 Spring AI 的 `/v1/chat/completions` 路径拼接；`AI_TIMEOUT_SECONDS` 控制单次请求超时，失败时最多重试 1 次。
+
+每次调用仍写入 `ai_call_log`：provider、model、prompt 版本、耗时、状态，以及 Spring AI 返回的 input/output token 用量。
 
 ## 5. 向量检索与嵌入
 

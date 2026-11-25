@@ -10,6 +10,8 @@ import jakarta.persistence.Table;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
+import org.hibernate.annotations.SQLDelete;
+import org.hibernate.annotations.SQLRestriction;
 
 import java.time.Instant;
 
@@ -18,6 +20,8 @@ import java.time.Instant;
 @NoArgsConstructor
 @Entity
 @Table(name = "refresh_token")
+@SQLDelete(sql = "UPDATE refresh_token SET deleted = 1 WHERE id = ?")
+@SQLRestriction("deleted = 0")
 public class RefreshToken extends BaseEntity {
 
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
