@@ -109,7 +109,7 @@ async function add() {
   if (!lookupResult.value) return
   adding.value = true
   try {
-    await vocabularyApi.add(lookupResult.value.lemma)
+    await vocabularyApi.add({ lemma: lookupResult.value.lemma })
     ElMessage.success('已加入词汇本')
     dialogOpen.value = false
     lookupWord.value = ''
@@ -227,8 +227,8 @@ onMounted(() => {
             </div>
             <span class="status-tag" :class="word.status.toLowerCase()">{{ statusLabel(word.status) }}</span>
           </div>
-          <p class="word-zh">{{ word.definitionZh }}</p>
-          <p class="word-en">{{ word.definitionEn }}</p>
+          <p class="word-zh">{{ word.definitionZh || '暂无释义' }}</p>
+          <p v-if="word.definitionEn" class="word-en">{{ word.definitionEn }}</p>
           <p v-if="word.exampleEn" class="word-example">{{ word.exampleEn }}</p>
           <div class="word-foot">
             <span>{{ nextReviewLabel(word.nextReviewAt) }}</span>

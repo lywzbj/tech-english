@@ -70,9 +70,15 @@ export function renderMarkdown(source: string): string {
   })
 }
 
-export function extractToc(source: string): { id: string; text: string; level: number }[] {
+export interface TocItem {
+  id: string
+  text: string
+  level: number
+}
+
+export function extractToc(source: string): TocItem[] {
   const lines = (source || '').split('\n')
-  const result: { id: string; text: string; level: number }[] = []
+  const result: TocItem[] = []
   let inCode = false
   for (const line of lines) {
     if (line.trim().startsWith('```')) {

@@ -154,6 +154,14 @@ export interface VocabLookup {
   inDeck: boolean
 }
 
+export interface VocabularyAddRequest {
+  lemma: string
+  contextSentence?: string
+  definitionZh?: string
+  definitionEn?: string
+  pos?: string
+}
+
 export interface ReadingArticleSummary {
   id: number
   title: string

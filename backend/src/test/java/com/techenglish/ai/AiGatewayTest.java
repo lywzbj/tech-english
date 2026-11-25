@@ -6,6 +6,7 @@ import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.messages.AssistantMessage;
+import org.springframework.ai.chat.metadata.ChatGenerationMetadata;
 import org.springframework.ai.chat.metadata.ChatResponseMetadata;
 import org.springframework.ai.chat.metadata.DefaultUsage;
 import org.springframework.ai.chat.model.ChatModel;
@@ -82,6 +83,26 @@ class AiGatewayTest {
     }
 
     @Test
+    void replacesTruncatedJsonWithFriendlyMessage() {
+        AiCallLogRepository repository = mock(AiCallLogRepository.class);
+        String truncated = "{\"translation\":\"你为类的成员选择顺序\",\"explanation\":\"第一句的主干是 The order";
+        AiGateway gateway = gateway(new AiProperties(),
+                new StubChatModel(truncated, 416, 1200, "length"), repository);
+
+        AiDtos.ExplainResponse response = gateway.explain(5L, request());
+
+        assertThat(response.translation()).isEmpty();
+        assertThat(response.explanation()).contains("长度上限");
+        assertThat(response.grammarPoints()).isEmpty();
+
+        ArgumentCaptor<AiCallLog> log = ArgumentCaptor.forClass(AiCallLog.class);
+        verify(repository).save(log.capture());
+        assertThat(log.getValue().getStatus()).isEqualTo("DEGRADED");
+        assertThat(log.getValue().getOutputTokens()).isEqualTo(1200);
+        assertThat(log.getValue().getErrorMessage()).contains("finishReason=length");
+    }
+
+    @Test
     void rejectsRemoteProviderWithoutApiKey() {
         AiProperties properties = new AiProperties();
         properties.setProvider("deepseek");
@@ -113,11 +134,17 @@ class AiGatewayTest {
         private final String content;
         private final int promptTokens;
         private final int completionTokens;
+        private final String finishReason;
 
         private StubChatModel(String content, int promptTokens, int completionTokens) {
+            this(content, promptTokens, completionTokens, "stop");
+        }
+
+        private StubChatModel(String content, int promptTokens, int completionTokens, String finishReason) {
             this.content = content;
             this.promptTokens = promptTokens;
             this.completionTokens = completionTokens;
+            this.finishReason = finishReason;
         }
 
         @Override
@@ -126,7 +153,8 @@ class AiGatewayTest {
                     .model("stub-model")
                     .usage(new DefaultUsage(promptTokens, completionTokens))
                     .build();
-            return new ChatResponse(List.of(new Generation(new AssistantMessage(content))), metadata);
+            return new ChatResponse(List.of(new Generation(new AssistantMessage(content),
+                    ChatGenerationMetadata.builder().finishReason(finishReason).build())), metadata);
         }
 
         @Override

@@ -100,9 +100,9 @@ public class VocabularyService {
 
     @Transactional
     public VocabularyDtos.VocabCard add(Long userId, VocabularyDtos.AddVocabRequest request) {
-        VocabEntry entry = entryRepository.findByLemmaIgnoreCase(request.lemma().trim())
-                .orElseThrow(() -> ApiException.notFound("WORD_NOT_FOUND",
-                        "词库中暂时没有这个词，先在 AI 解释里查看释义"));
+        String lemma = request.lemma().trim();
+        VocabEntry entry = entryRepository.findByLemmaIgnoreCase(lemma)
+                .orElseGet(() -> createReadingEntry(lemma, request));
         UserVocab item = userVocabRepository.findByUserIdAndVocabId(userId, entry.getId())
                 .orElseGet(() -> {
                     UserVocab created = new UserVocab();
@@ -152,6 +152,28 @@ public class VocabularyService {
             deck.add(item);
         }
         userVocabRepository.saveAll(deck);
+    }
+
+    /**
+     * Words met while reading may not be in the curated seed dictionary. They are
+     * still worth collecting, so create a reading-sourced entry with whatever
+     * definition the client supplied; an empty definition is allowed and can be
+     * enriched later without touching the learner's SRS state.
+     */
+    private VocabEntry createReadingEntry(String lemma, VocabularyDtos.AddVocabRequest request) {
+        VocabEntry entry = new VocabEntry();
+        entry.setLemma(lemma);
+        entry.setPos(trimToEmpty(request.pos()));
+        entry.setDefinitionEn(trimToEmpty(request.definitionEn()));
+        entry.setDefinitionZh(trimToEmpty(request.definitionZh()));
+        entry.setCategory("GENERAL");
+        entry.setDomain("READING");
+        entry.setSource("READING");
+        return entryRepository.save(entry);
+    }
+
+    private static String trimToEmpty(String value) {
+        return value == null ? "" : value.trim();
     }
 
     private VocabularyDtos.VocabCard toCard(UserVocab item, VocabEntry entry) {

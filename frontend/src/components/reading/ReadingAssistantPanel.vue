@@ -1,10 +1,9 @@
 <script setup lang="ts">
-import { ChatDotRound, Close } from '@element-plus/icons-vue'
+import { ChatDotRound } from '@element-plus/icons-vue'
 import type { AiExplainResponse, VocabLookup } from '@/types/api'
 
-// 右下角悬浮的 AI 阅读助手：只在用户选中文字并触发查词 / AI 解释后弹出。
+// AI 助手内容：抽屉只负责容器，组件本身只渲染查词 / AI 解释结果。
 defineProps<{
-  open: boolean
   panel: 'none' | 'word' | 'ai'
   wordLoading: boolean
   wordResult: VocabLookup | null
@@ -15,24 +14,13 @@ defineProps<{
 }>()
 
 const emit = defineEmits<{
-  (e: 'update:open', open: boolean): void
   (e: 'explain', mode?: 'word' | 'sentence'): void
   (e: 'add-word'): void
 }>()
 </script>
 
 <template>
-  <section v-if="open" class="assistant-panel card" aria-label="AI 阅读助手">
-    <div class="assistant-head">
-      <div>
-        <p class="eyebrow">AI READING ASSISTANT</p>
-        <h2>AI 助手</h2>
-      </div>
-      <el-button circle size="small" title="关闭助手" @click="emit('update:open', false)">
-        <el-icon><Close /></el-icon>
-      </el-button>
-    </div>
-
+  <section class="assistant-panel" aria-label="AI 阅读助手">
     <div v-if="aiLoading && panel === 'ai'" class="assistant-loading">
       <el-skeleton animated :rows="4" />
     </div>
@@ -98,59 +86,19 @@ const emit = defineEmits<{
       <div class="hint-icon"><el-icon><ChatDotRound /></el-icon></div>
       <p>用鼠标选中一个词或一句话，然后选择“查词”或“AI 解释”。</p>
     </div>
-
-    <span v-if="aiResult?.provider" class="ai-provider">{{ aiResult.provider === 'deepseek' ? 'DeepSeek' : 'Demo AI' }}</span>
   </section>
 </template>
 
 <style scoped>
-.assistant-panel {
-  position: relative;
-  width: 340px;
-  max-width: calc(100vw - 32px);
-  max-height: min(480px, 52vh);
-  overflow-y: auto;
-  overscroll-behavior: contain;
-  padding: 18px;
-  animation: rise-in 0.18s ease both;
-}
-
-.assistant-head {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 10px;
-}
-
-.assistant-head h2 {
-  margin-top: 3px;
-  font-family: var(--font-reading);
-  font-size: 19px;
-  font-weight: 600;
-  letter-spacing: -0.02em;
-}
-
-.ai-provider {
-  position: absolute;
-  top: 22px;
-  right: 58px;
-  padding: 3px 7px;
-  border-radius: 5px;
-  background: var(--surface-3);
-  color: var(--faint);
-  font-family: var(--font-mono);
-  font-size: 9px;
-}
-
 .assistant-loading {
-  margin-top: 16px;
+  margin-top: 4px;
 }
 
 .assistant-hint {
   display: grid;
   justify-items: center;
   gap: 9px;
-  margin-top: 18px;
+  margin-top: 4px;
   padding: 22px 12px;
   border: 1px dashed var(--line-strong);
   border-radius: 11px;
@@ -256,7 +204,6 @@ const emit = defineEmits<{
   display: flex;
   align-items: baseline;
   gap: 7px;
-  margin-top: 14px;
 }
 
 .word-panel-head h3 {
@@ -304,7 +251,7 @@ const emit = defineEmits<{
 }
 
 .assistant-error {
-  margin-top: 14px;
+  margin-top: 4px;
   padding: 11px 12px;
   border-radius: 8px;
   background: var(--rose-soft);

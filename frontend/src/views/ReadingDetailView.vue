@@ -16,8 +16,10 @@ import {
   ZoomIn,
   ZoomOut,
 } from '@element-plus/icons-vue'
-import ReadingAssistantPanel from '@/components/ReadingAssistantPanel.vue'
-import ReadingComprehensionPanel from '@/components/ReadingComprehensionPanel.vue'
+import ContentDrawer from '@/components/common/ContentDrawer.vue'
+import ReadingAssistantPanel from '@/components/reading/ReadingAssistantPanel.vue'
+import ReadingComprehensionPanel from '@/components/reading/ReadingComprehensionPanel.vue'
+import ReadingToc from '@/components/reading/ReadingToc.vue'
 import { aiApi, readingApi, vocabularyApi } from '@/api'
 import { completeTaskByRef } from '@/composables/useTaskCompletion'
 import { extractToc, renderMarkdown } from '@/utils/markdown'
@@ -76,9 +78,22 @@ const ctxMenuStyle = computed(() => {
   return { left: `${left}px`, top: `${top}px` }
 })
 
-// 助手与阅读理解都改为右下角浮层，不再常驻侧栏占用阅读区宽度。
-const assistantOpen = ref(false)
-const questionsOpen = ref(false)
+// 左侧抽屉同一时刻只承载一个面板：AI 助手或阅读理解，互斥切换。
+const activeDrawer = ref<'none' | 'assistant' | 'questions'>('none')
+const panelDrawerTitle = computed(() =>
+  activeDrawer.value === 'assistant' ? 'AI 助手' : '阅读理解',
+)
+const panelDrawerEyebrow = computed(() =>
+  activeDrawer.value === 'assistant' ? 'AI READING ASSISTANT' : 'COMPREHENSION',
+)
+
+function toggleQuestions() {
+  activeDrawer.value = activeDrawer.value === 'questions' ? 'none' : 'questions'
+}
+
+function onPanelDrawerToggle(open: boolean) {
+  if (!open) activeDrawer.value = 'none'
+}
 
 const activePanel = ref<'none' | 'word' | 'ai'>('none')
 const wordResult = ref<VocabLookup | null>(null)
@@ -139,8 +154,7 @@ async function load(id: string) {
   error.value = ''
   completeResult.value = null
   activePanel.value = 'none'
-  assistantOpen.value = false
-  questionsOpen.value = false
+  activeDrawer.value = 'none'
   aiResult.value = null
   wordResult.value = null
   showBackTop.value = false
@@ -368,7 +382,7 @@ async function lookupSelected(override?: string) {
   wordError.value = ''
   wordResult.value = null
   activePanel.value = 'word'
-  assistantOpen.value = true
+  activeDrawer.value = 'assistant'
   try {
     wordResult.value = await vocabularyApi.lookup(word)
   } catch (err) {
@@ -386,7 +400,7 @@ async function explainSelected(mode?: 'word' | 'sentence', override?: { text?: s
   aiError.value = ''
   aiResult.value = null
   activePanel.value = 'ai'
-  assistantOpen.value = true
+  activeDrawer.value = 'assistant'
   try {
     aiResult.value = await aiApi.explain({
       text,
@@ -405,12 +419,54 @@ async function addSelectedWord(override?: string) {
   // which may be stale from a previously different word.
   const word = (override ?? wordResult.value?.lemma ?? selectedText.value).trim()
   if (!word) return
+  const context = override ? ctxContext.value : selectedContext.value
+  const pending = ElMessage({ message: '正在加入生词本…', duration: 0 })
   try {
-    await vocabularyApi.add(word, override ? ctxContext.value : selectedContext.value)
+    // The curated dictionary gives pos/phonetic/definitions for free. A word met
+    // while reading is often outside it; those are still collectable.
+    let lookup: VocabLookup | null = null
+    try {
+      lookup = await vocabularyApi.lookup(word)
+    } catch {
+      // Not in the seed dictionary.
+    }
+    if (lookup?.inDeck) {
+      ElMessage.info('这个词已经在词汇本里了')
+      return
+    }
+    const details = lookup
+      ? { definitionZh: lookup.definitionZh, definitionEn: lookup.definitionEn, pos: lookup.pos }
+      : await aiDefinitionFor(word, context)
+    await vocabularyApi.add({
+      lemma: lookup?.lemma ?? word,
+      contextSentence: context,
+      ...details,
+    })
     if (wordResult.value) wordResult.value.inDeck = true
     ElMessage.success('已加入词汇本')
   } catch (err) {
     ElMessage.error(errorMessage(err, '加入失败'))
+  } finally {
+    pending.close()
+  }
+}
+
+/**
+ * Words outside the seed dictionary are saved with an empty definition when AI is
+ * unavailable, so collection never blocks on the network. The demo model returns a
+ * fixed unrelated payload, so it is not used as a definition source.
+ */
+async function aiDefinitionFor(word: string, context: string) {
+  const empty = { definitionZh: '', definitionEn: '', pos: '' }
+  try {
+    const status = await aiApi.status()
+    if (status.provider === 'mock' || !status.configured) return empty
+    const explanation = await aiApi.explain({ text: word, context, mode: 'word' })
+    const definitionZh =
+      explanation.translation?.trim() || explanation.explanation?.split('。')[0]?.trim() || ''
+    return { ...empty, definitionZh }
+  } catch {
+    return empty
   }
 }
 
@@ -553,60 +609,66 @@ onUnmounted(() => {
           </div>
         </article>
 
-        <!-- 外层页面容器的入场 transform 会把 fixed 包含块从视口改成祖先，抽屉和入口必须 Teleport 到 body。 -->
+        <!-- 外层页面容器的入场 transform 会把 fixed 包含块从视口改成祖先，入口按钮必须 Teleport 到 body。 -->
         <Teleport to="body">
-        <aside class="toc-drawer card" :class="{ open: tocOpen }" aria-label="文章目录">
-          <div class="toc-drawer-head">
-            <div>
-              <p class="eyebrow">ON THIS PAGE</p>
-              <h2>文章目录</h2>
-            </div>
-            <el-button circle size="small" title="收起目录" @click="tocOpen = false">
-              <el-icon><Close /></el-icon>
-            </el-button>
-          </div>
-          <nav v-if="toc.length" class="toc-list">
+          <div class="side-tabs side-tabs-left">
             <button
-              v-for="item in toc"
-              :key="item.id"
               type="button"
-              class="toc-item"
-              :class="{ sub: item.level === 3, deep: item.level >= 4 }"
-              @click="scrollTo(item.id)"
+              class="side-tab"
+              :class="{ active: activeDrawer === 'questions' }"
+              title="阅读理解"
+              @click="toggleQuestions"
             >
-              {{ item.text }}
+              <el-icon><EditPen /></el-icon>
+              <span>题目</span>
+              <span v-if="questionCount" class="tab-count">{{ questionCount }}</span>
             </button>
-          </nav>
-          <p v-else class="side-empty">这篇文章没有分节标题。</p>
-        </aside>
+          </div>
+          <div class="side-tabs side-tabs-right">
+            <button
+              v-if="!tocOpen"
+              type="button"
+              class="side-tab"
+              title="展开文章目录"
+              @click="tocOpen = true"
+            >
+              <el-icon><List /></el-icon>
+              <span>目录</span>
+            </button>
+          </div>
+        </Teleport>
 
-        <div class="side-tabs">
-          <button
-            v-if="!tocOpen"
-            type="button"
-            class="side-tab"
-            title="展开文章目录"
-            @click="tocOpen = true"
-          >
-            <el-icon><List /></el-icon>
-            <span>目录</span>
-          </button>
-          <button
-            type="button"
-            class="side-tab"
-            :class="{ active: questionsOpen }"
-            title="阅读理解"
-            @click="questionsOpen = !questionsOpen"
-          >
-            <el-icon><EditPen /></el-icon>
-            <span>题目</span>
-            <span v-if="questionCount" class="tab-count">{{ questionCount }}</span>
-          </button>
-        </div>
+        <ContentDrawer
+          v-model="tocOpen"
+          title="文章目录"
+          eyebrow="ON THIS PAGE"
+          direction="rtl"
+          size="min(300px, 86vw)"
+        >
+          <ReadingToc :items="toc" @select="scrollTo" />
+        </ContentDrawer>
 
-        <div class="reader-dock">
+        <ContentDrawer
+          class="reader-panel-drawer"
+          :model-value="activeDrawer !== 'none'"
+          :title="panelDrawerTitle"
+          :eyebrow="panelDrawerEyebrow"
+          direction="ltr"
+          size="min(400px, 92vw)"
+          offset="var(--sidebar-width)"
+          @update:model-value="onPanelDrawerToggle"
+        >
+          <template #header-extra>
+            <span v-if="activeDrawer === 'assistant' && aiResult?.provider" class="drawer-badge">
+              {{ aiResult.provider === 'deepseek' ? 'DeepSeek' : 'Demo AI' }}
+            </span>
+            <span v-else-if="activeDrawer === 'questions'" class="drawer-badge">
+              {{ answeredCount }} / {{ questionCount }}
+            </span>
+          </template>
+
           <ReadingAssistantPanel
-            v-model:open="assistantOpen"
+            v-if="activeDrawer === 'assistant'"
             :panel="activePanel"
             :word-loading="wordLoading"
             :word-result="wordResult"
@@ -618,7 +680,7 @@ onUnmounted(() => {
             @add-word="addSelectedWord()"
           />
           <ReadingComprehensionPanel
-            v-model:open="questionsOpen"
+            v-else-if="activeDrawer === 'questions'"
             :questions="article.questions"
             :answers="answers"
             :submitting="submitting"
@@ -629,8 +691,7 @@ onUnmounted(() => {
             @answer="setAnswer"
             @submit="completeReading"
           />
-        </div>
-        </Teleport>
+        </ContentDrawer>
       </div>
 
       <div v-if="toolbarVisible" class="selection-toolbar" :style="toolbarStyle" @mousedown.prevent>
@@ -670,7 +731,7 @@ onUnmounted(() => {
             >
               <el-icon v-if="ctxMoreLoading" class="is-loading"><Loading /></el-icon>
               <el-icon v-else><ChatDotRound /></el-icon>
-              {{ ctxMoreLoading ? '正在解析…' : 'AI 详解（右下助手）' }}
+              {{ ctxMoreLoading ? '正在解析…' : 'AI 详解' }}
             </button>
             <button v-if="ctxIsWord" type="button" class="ctx-item" @click="ctxLookup">
               <el-icon><Search /></el-icon> 查词库
@@ -873,89 +934,28 @@ onUnmounted(() => {
   gap: 7px;
 }
 
-.toc-list {
-  display: grid;
-  gap: 1px;
-  margin-top: 12px;
-}
-
-.toc-item {
-  padding: 7px 9px;
-  border: 0;
-  border-left: 2px solid transparent;
-  border-radius: 0 5px 5px 0;
-  background: transparent;
-  color: var(--muted);
-  font-size: 13px;
-  line-height: 1.55;
-  cursor: pointer;
-  text-align: left;
-}
-
-.toc-item:hover {
-  border-left-color: var(--green-2);
-  background: var(--surface-2);
-  color: var(--ink);
-}
-
-.toc-item.sub {
-  padding-left: 22px;
-  font-size: 12px;
-}
-
-.toc-item.deep {
-  padding-left: 34px;
-  font-size: 12px;
-  color: var(--muted);
-}
-
-/* 抽屉本体：固定在视口右缘，自身独立滚动，目录再长也不会顶出页面。 */
-.toc-drawer {
-  position: fixed;
-  top: 96px;
-  right: 0;
-  bottom: 24px;
-  z-index: 80;
-  width: 288px;
-  padding: 20px 12px 20px 20px;
-  border-right: 0;
-  border-radius: var(--radius) 0 0 var(--radius);
-  overflow-y: auto;
-  overscroll-behavior: contain;
-  transform: translateX(105%);
-  transition: transform 0.28s ease;
-}
-
-.toc-drawer.open {
-  transform: none;
-}
-
-.toc-drawer-head {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 10px;
-  padding-right: 8px;
-}
-
-.toc-drawer-head h2 {
-  margin-top: 3px;
-  font-family: var(--font-reading);
-  font-size: 21px;
-  font-weight: 600;
-  letter-spacing: -0.02em;
-}
-
-/* 右缘悬浮入口按钮列：目录收起时的「目录」入口与「题目」开关。 */
+/* 侧边入口：左侧「题目」打开左抽屉，右侧「目录」打开右抽屉。 */
 .side-tabs {
   position: fixed;
   top: 50%;
-  right: 0;
   z-index: 80;
   display: flex;
   flex-direction: column;
   gap: 10px;
   transform: translateY(-50%);
+}
+
+.side-tabs-left {
+  left: var(--sidebar-width);
+}
+
+/* 左抽屉锚定在侧边栏右缘：动画期间裁掉侧边栏区域，让它从菜单边缘滑出。 */
+:global(.is-drawer.el-modal-drawer:has(> .reader-panel-drawer)) {
+  clip-path: inset(0 0 0 var(--sidebar-width));
+}
+
+.side-tabs-right {
+  right: 0;
 }
 
 .side-tab {
@@ -966,14 +966,22 @@ onUnmounted(() => {
   gap: 6px;
   padding: 14px 10px;
   border: 1px solid var(--line);
-  border-right: 0;
-  border-radius: 10px 0 0 10px;
   background: var(--surface);
   box-shadow: var(--shadow-sm);
   color: var(--muted);
   font-size: 12px;
   cursor: pointer;
   transition: color 0.15s ease, border-color 0.15s ease;
+}
+
+.side-tabs-left .side-tab {
+  border-left: 0;
+  border-radius: 0 10px 10px 0;
+}
+
+.side-tabs-right .side-tab {
+  border-right: 0;
+  border-radius: 10px 0 0 10px;
 }
 
 .side-tab:hover,
@@ -999,27 +1007,20 @@ onUnmounted(() => {
   font-weight: 700;
 }
 
-/* 右下角浮层停靠区：AI 助手与阅读理解弹窗共用，浮在返回顶部按钮上方。 */
-.reader-dock {
-  position: fixed;
-  right: 24px;
-  bottom: 88px;
-  z-index: 95;
-  display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  gap: 12px;
-  pointer-events: none;
+.side-tabs-left .tab-count {
+  right: -7px;
+  left: auto;
 }
 
-.reader-dock > * {
-  pointer-events: auto;
-}
-
-.side-empty {
-  margin-top: 10px;
+/* 抽屉头部的小徽标：AI provider 或答题进度。 */
+.drawer-badge {
+  padding: 3px 7px;
+  border-radius: 5px;
+  background: var(--surface-3);
   color: var(--faint);
-  font-size: 12px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  white-space: nowrap;
 }
 
 .selection-toolbar {
@@ -1267,9 +1268,9 @@ onUnmounted(() => {
     bottom: 20px;
   }
 
-  .reader-dock {
-    right: 16px;
-    bottom: 76px;
+  .side-tab {
+    padding: 12px 8px;
+    font-size: 11px;
   }
 }
 </style>

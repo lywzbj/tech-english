@@ -4,8 +4,8 @@ import { useRoute } from 'vue-router'
 import dayjs from 'dayjs'
 import 'dayjs/locale/zh-cn'
 import { Menu } from '@element-plus/icons-vue'
-import SidebarNav from '@/components/SidebarNav.vue'
-import ThemeSwitcher from '@/components/ThemeSwitcher.vue'
+import SidebarNav from '@/components/common/SidebarNav.vue'
+import ThemeSwitcher from '@/components/common/ThemeSwitcher.vue'
 import { useAuthStore } from '@/stores/auth'
 
 dayjs.locale('zh-cn')
@@ -72,8 +72,8 @@ const target = computed(() =>
 .sidebar {
   position: sticky;
   top: 0;
-  flex: 0 0 248px;
-  width: 248px;
+  flex: 0 0 var(--sidebar-width);
+  width: var(--sidebar-width);
   height: 100vh;
 }
 
@@ -177,11 +177,6 @@ const target = computed(() =>
 }
 
 @media (max-width: 1100px) {
-  .sidebar {
-    flex-basis: 220px;
-    width: 220px;
-  }
-
   .content {
     padding-inline: 24px;
   }

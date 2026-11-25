@@ -119,7 +119,7 @@ class AiClientConfigurationTest {
         JsonNode body = objectMapper.readTree(requestBody.get());
         assertThat(body.path("model").asText()).isEqualTo("deepseek-chat");
         assertThat(body.path("temperature").asDouble()).isEqualTo(0.2);
-        assertThat(body.path("max_tokens").asInt()).isEqualTo(1200);
+        assertThat(body.path("max_tokens").asInt()).isEqualTo(3000);
         assertThat(body.path("response_format").path("type").asText()).isEqualTo("json_object");
         assertThat(body.path("messages")).hasSize(2);
         assertThat(body.path("messages").get(0).path("role").asText()).isEqualTo("system");

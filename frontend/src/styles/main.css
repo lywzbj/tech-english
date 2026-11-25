@@ -61,6 +61,8 @@ html[data-theme='light'] {
   --radius-sm: 10px;
   --radius: 16px;
   --radius-lg: 24px;
+  /* Layout: AppShell sidebar width, also used to anchor page-level fixed rails. */
+  --sidebar-width: 248px;
   --font-ui: 'Inter', 'PingFang SC', 'Microsoft YaHei', 'Noto Sans SC', system-ui, sans-serif;
   --font-reading: 'Iowan Old Style', 'Palatino Linotype', 'Book Antiqua', Georgia, 'Songti SC', serif;
   --font-mono: 'JetBrains Mono', 'SFMono-Regular', Consolas, monospace;
@@ -637,6 +639,24 @@ p {
 
   .card-pad {
     padding: 18px;
+  }
+}
+
+/*
+ * Match the theme block's `html[data-theme='light']` specificity so these
+ * overrides win regardless of the active skin.
+ */
+@media (max-width: 1100px) {
+  :root,
+  html[data-theme] {
+    --sidebar-width: 220px;
+  }
+}
+
+@media (max-width: 900px) {
+  :root,
+  html[data-theme] {
+    --sidebar-width: 0px;
   }
 }
 

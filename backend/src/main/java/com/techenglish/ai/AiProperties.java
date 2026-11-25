@@ -23,8 +23,8 @@ public class AiProperties {
     private String provider = PROVIDER_MOCK;
     private String baseUrl = "https://api.deepseek.com/v1";
     private String apiKey = "";
-    private String model = "deepseek-chat";
-    private int maxOutputTokens = 1200;
+    private String model = "deepseek-flash";
+    private int maxOutputTokens = 3000;
     private int timeoutSeconds = 45;
 
     public boolean remote() {
