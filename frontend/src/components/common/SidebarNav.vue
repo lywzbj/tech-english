@@ -6,6 +6,7 @@ import {
   Collection,
   DataAnalysis,
   Notebook,
+  PriceTag,
   Reading,
   Search,
   Setting,
@@ -25,6 +26,7 @@ const primary = [
   { name: 'grammar', label: '语法闯关', icon: Trophy, to: '/grammar' },
   { name: 'review', label: '到期复习', icon: Collection, to: '/review' },
   { name: 'reading', label: '阅读实验室', icon: Reading, to: '/reading' },
+  { name: 'reading-tags', label: '标签管理', icon: PriceTag, to: '/reading/tags' },
   { name: 'vocabulary', label: '我的词汇', icon: Notebook, to: '/vocabulary' },
   { name: 'search', label: '知识搜索', icon: Search, to: '/search' },
 ]

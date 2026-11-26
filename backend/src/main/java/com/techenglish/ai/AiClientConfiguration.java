@@ -2,6 +2,8 @@ package com.techenglish.ai;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.micrometer.observation.ObservationRegistry;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.model.ChatModel;
 import org.springframework.ai.openai.OpenAiChatModel;
@@ -26,12 +28,20 @@ import java.time.Duration;
 @Configuration(proxyBeanMethods = false)
 public class AiClientConfiguration {
 
+    private static final Logger log = LoggerFactory.getLogger(AiClientConfiguration.class);
+
     @Bean
     public ChatModel aiChatModel(AiProperties properties, ObjectMapper objectMapper,
                                  ObjectProvider<ObservationRegistry> observationRegistry) {
         if (!properties.remote()) {
+            log.info("AI chat model: offline mock (app.ai.provider={})", properties.getProvider());
             return new MockChatModel(objectMapper);
         }
+        // The API key itself is never logged — presence only.
+        log.info("AI chat model: provider={} model={} baseUrl={} timeoutSeconds={} apiKeyPresent={}",
+                properties.getProvider(), properties.getModel(), normalizeBaseUrl(properties.getBaseUrl()),
+                Math.max(1, properties.getTimeoutSeconds()),
+                properties.getApiKey() != null && !properties.getApiKey().isBlank());
         return OpenAiChatModel.builder()
                 .openAiApi(openAiApi(properties))
                 .defaultOptions(OpenAiChatOptions.builder()

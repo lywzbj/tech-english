@@ -27,6 +27,10 @@ public class ReadingArticle extends BaseEntity {
     @Column(name = "source_type", nullable = false, length = 20)
     private ReadingSourceType sourceType;
 
+    /** Managed document-type tag (reading_tag.id); null falls back to the sourceType label. */
+    @Column(name = "tag_id")
+    private Long tagId;
+
     @Column(name = "source_url", length = 500)
     private String sourceUrl;
 

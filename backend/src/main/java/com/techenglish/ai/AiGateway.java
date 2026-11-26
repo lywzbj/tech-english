@@ -2,6 +2,8 @@ package com.techenglish.ai;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.techenglish.common.ApiException;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.client.ResponseEntity;
 import org.springframework.ai.chat.metadata.Usage;
@@ -12,30 +14,46 @@ import org.springframework.ai.converter.StructuredOutputConverter;
 import org.springframework.ai.openai.OpenAiChatOptions;
 import org.springframework.ai.openai.api.ResponseFormat;
 import org.springframework.ai.retry.NonTransientAiException;
-import org.springframework.core.io.ClassPathResource;
 import org.springframework.stereotype.Service;
 
-import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 
 @Service
 public class AiGateway {
 
-    private static final String PROMPT_VERSION = "explain-v2";
+    private static final String PURPOSE_EXPLAIN = "explain";
+    private static final String PURPOSE_PREVIEW = "preview";
+    private static final String PURPOSE_QUESTION_GEN = "question-gen";
     private static final double TEMPERATURE = 0.2;
+    private static final Logger log = LoggerFactory.getLogger(AiGateway.class);
 
     private final AiProperties properties;
     private final ChatClient aiChatClient;
+    private final PromptRegistry promptRegistry;
     private final StructuredOutputConverter<AiDtos.ExplainPayload> outputConverter;
+    private final StructuredOutputConverter<PreviewDtos.PreviewPayload> previewConverter;
+    private final StructuredOutputConverter<AiDtos.JudgeGuessPayload> judgeConverter;
+    private final StructuredOutputConverter<AiDtos.VocabScanPayload> scanConverter;
+    private final StructuredOutputConverter<QuizDtos.QuestionGenPayload> questionGenConverter;
     private final AiCallLogRepository aiCallLogRepository;
 
-    public AiGateway(AiProperties properties, ChatClient aiChatClient, ObjectMapper objectMapper,
-                     AiCallLogRepository aiCallLogRepository) {
+    public AiGateway(AiProperties properties, ChatClient aiChatClient, PromptRegistry promptRegistry,
+                     ObjectMapper objectMapper, AiCallLogRepository aiCallLogRepository) {
         this.properties = properties;
         this.aiChatClient = aiChatClient;
-        this.outputConverter = new TolerantExplainConverter(
+        this.promptRegistry = promptRegistry;
+        this.outputConverter = new TolerantConverter<>(
                 new BeanOutputConverter<>(AiDtos.ExplainPayload.class, objectMapper));
+        this.previewConverter = new TolerantConverter<>(
+                new BeanOutputConverter<>(PreviewDtos.PreviewPayload.class, objectMapper));
+        this.judgeConverter = new TolerantConverter<>(
+                new BeanOutputConverter<>(AiDtos.JudgeGuessPayload.class, objectMapper));
+        this.scanConverter = new TolerantConverter<>(
+                new BeanOutputConverter<>(AiDtos.VocabScanPayload.class, objectMapper));
+        this.questionGenConverter = new TolerantConverter<>(
+                new BeanOutputConverter<>(QuizDtos.QuestionGenPayload.class, objectMapper));
         this.aiCallLogRepository = aiCallLogRepository;
     }
 
@@ -46,18 +64,20 @@ public class AiGateway {
     public AiDtos.ExplainResponse explain(Long userId, AiDtos.ExplainRequest request) {
         String provider = providerName();
         String mode = request.mode() == null || request.mode().isBlank() ? "sentence" : request.mode();
-        String systemPrompt = loadPrompt();
-        String userPrompt = """
-                Mode: %s
-                Selected text:
-                <learner_text>
-                %s
-                </learner_text>
-                Context from the article:
-                <context>
-                %s
-                </context>
-                """.formatted(mode, request.text(), request.context() == null ? "" : request.context());
+        String systemPrompt = promptRegistry.systemPrompt(PURPOSE_EXPLAIN);
+        String userPrompt = promptRegistry.render(PURPOSE_EXPLAIN, Map.of(
+                "mode", mode,
+                "text", request.text(),
+                "context", request.context() == null ? "" : request.context()));
+
+        log.debug("AI {} request: user={} mode={} textChars={} contextChars={} promptVersion={}",
+                PURPOSE_EXPLAIN, userId, mode, request.text().length(),
+                request.context() == null ? 0 : request.context().length(),
+                promptRegistry.versionLabel(PURPOSE_EXPLAIN));
+        // The prompts embed the learner's selected text, so full bodies stay at
+        // trace: visible during development, absent from production INFO/WARN logs.
+        log.trace("AI {} system prompt:\n{}", PURPOSE_EXPLAIN, systemPrompt);
+        log.trace("AI {} user prompt:\n{}", PURPOSE_EXPLAIN, userPrompt);
 
         long started = System.currentTimeMillis();
         try {
@@ -77,16 +97,206 @@ public class AiGateway {
             String raw = extractContent(chatResponse);
             String finishReason = finishReason(chatResponse);
             AiDtos.ExplainPayload payload = response.getEntity();
+            int latencyMs = (int) (System.currentTimeMillis() - started);
+            Integer promptTokens = tokens(chatResponse, true);
+            Integer completionTokens = tokens(chatResponse, false);
+            log.trace("AI {} raw response ({} chars, finishReason={}): {}",
+                    PURPOSE_EXPLAIN, raw.length(), finishReason, raw);
             boolean degraded = payload == null && looksLikeJson(raw);
+            if (degraded) {
+                log.warn("AI call DEGRADED: provider={} model={} finishReason={} latencyMs={} rawChars={}",
+                        provider, properties.getModel(), finishReason, latencyMs, raw.length());
+            } else {
+                log.info("AI call SUCCESS: provider={} model={} promptVersion={} latencyMs={} promptTokens={} completionTokens={}",
+                        provider, properties.getModel(), promptRegistry.versionLabel(PURPOSE_EXPLAIN),
+                        latencyMs, promptTokens, completionTokens);
+            }
             AiDtos.ExplainResponse result = toResponse(provider, raw, payload,
                     "length".equalsIgnoreCase(finishReason));
-            log(userId, provider, degraded ? "DEGRADED" : "SUCCESS",
-                    (int) (System.currentTimeMillis() - started),
-                    tokens(chatResponse, true), tokens(chatResponse, false),
+            recordCall(userId, PURPOSE_EXPLAIN, provider, degraded ? "DEGRADED" : "SUCCESS", latencyMs,
+                    promptTokens, completionTokens,
                     degraded ? "Unparseable model output (finishReason=" + finishReason + ")" : null);
             return result;
         } catch (RuntimeException ex) {
-            log(userId, provider, "FAILED", (int) (System.currentTimeMillis() - started), null, null, ex.getMessage());
+            log.error("AI call FAILED: provider={} model={} latencyMs={}",
+                    provider, properties.getModel(), System.currentTimeMillis() - started, ex);
+            recordCall(userId, PURPOSE_EXPLAIN, provider, "FAILED", (int) (System.currentTimeMillis() - started),
+                    null, null, ex.getMessage());
+            throw toApiException(ex);
+        }
+    }
+
+    /**
+     * Runs the preview-sheet extraction for one article. Unlike explain(), a
+     * failed JSON parse is a hard error here: the draft is only useful as
+     * structured words/grammar, never as raw model text. Nothing is persisted —
+     * the learner confirms the draft and the reading service stores the subset.
+     */
+    public PreviewDtos.PreviewGenerateResponse generatePreview(Long userId, Map<String, String> vars) {
+        String provider = providerName();
+        String systemPrompt = promptRegistry.systemPrompt(PURPOSE_PREVIEW);
+        String userPrompt = promptRegistry.render(PURPOSE_PREVIEW, vars);
+
+        log.debug("AI {} request: user={} article={} contentChars={} promptVersion={}",
+                PURPOSE_PREVIEW, userId, vars.get("title"),
+                vars.get("content") == null ? 0 : vars.get("content").length(),
+                promptRegistry.versionLabel(PURPOSE_PREVIEW));
+        // The prompt embeds the whole article, so full bodies stay at trace.
+        log.trace("AI {} system prompt:\n{}", PURPOSE_PREVIEW, systemPrompt);
+        log.trace("AI {} user prompt:\n{}", PURPOSE_PREVIEW, userPrompt);
+
+        long started = System.currentTimeMillis();
+        boolean recorded = false;
+        try {
+            if (!properties.configured()) {
+                throw ApiException.unavailable("未配置 AI_API_KEY / AI_BASE_URL，请在 .env 或环境变量中设置");
+            }
+            ResponseEntity<ChatResponse, PreviewDtos.PreviewPayload> response = aiChatClient.prompt()
+                    .system(systemPrompt)
+                    .user(userPrompt)
+                    .options(chatOptions())
+                    .call()
+                    .responseEntity(previewConverter);
+            ChatResponse chatResponse = response.getResponse();
+            String raw = extractContent(chatResponse);
+            String finishReason = finishReason(chatResponse);
+            PreviewDtos.PreviewPayload payload = response.getEntity();
+            int latencyMs = (int) (System.currentTimeMillis() - started);
+            Integer promptTokens = tokens(chatResponse, true);
+            Integer completionTokens = tokens(chatResponse, false);
+            log.trace("AI {} raw response ({} chars, finishReason={}): {}",
+                    PURPOSE_PREVIEW, raw.length(), finishReason, raw);
+            if (payload == null) {
+                log.warn("AI call DEGRADED: provider={} model={} finishReason={} latencyMs={} rawChars={}",
+                        provider, properties.getModel(), finishReason, latencyMs, raw.length());
+                recordCall(userId, PURPOSE_PREVIEW, provider, "DEGRADED", latencyMs,
+                        promptTokens, completionTokens,
+                        "Unparseable model output (finishReason=" + finishReason + ")");
+                recorded = true;
+                throw ApiException.unavailable("AI 预习提取失败，请重试");
+            }
+            log.info("AI call SUCCESS: provider={} model={} promptVersion={} latencyMs={} promptTokens={} completionTokens={}",
+                    provider, properties.getModel(), promptRegistry.versionLabel(PURPOSE_PREVIEW),
+                    latencyMs, promptTokens, completionTokens);
+            recordCall(userId, PURPOSE_PREVIEW, provider, "SUCCESS", latencyMs,
+                    promptTokens, completionTokens, null);
+            recorded = true;
+            return new PreviewDtos.PreviewGenerateResponse(
+                    provider,
+                    properties.getModel(),
+                    promptRegistry.versionLabel(PURPOSE_PREVIEW),
+                    payload.words() == null ? List.of() : payload.words(),
+                    payload.grammar() == null ? List.of() : payload.grammar());
+        } catch (RuntimeException ex) {
+            if (!recorded) {
+                log.error("AI call FAILED: provider={} model={} latencyMs={}",
+                        provider, properties.getModel(), System.currentTimeMillis() - started, ex);
+                recordCall(userId, PURPOSE_PREVIEW, provider, "FAILED",
+                        (int) (System.currentTimeMillis() - started), null, null, ex.getMessage());
+            }
+            throw toApiException(ex);
+        }
+    }
+
+    /**
+     * Judges one guess from the settlement sheet. The verdict is normalised to
+     * correct | partial | wrong so a chatty model can never send an unknown label
+     * to the client; anything outside the three values degrades to "partial".
+     */
+    public AiDtos.JudgeGuessResponse judgeGuess(Long userId, AiDtos.JudgeGuessRequest request) {
+        AiDtos.JudgeGuessPayload payload = callStructured("vocab-judge", userId, Map.of(
+                "word", request.word(),
+                "guess", request.guess(),
+                "context", request.context() == null ? "" : request.context()),
+                judgeConverter, "AI 判定失败，请重试");
+        String verdict = payload.verdict() == null ? "" : payload.verdict().trim().toLowerCase(Locale.ROOT);
+        if (!List.of("correct", "partial", "wrong").contains(verdict)) {
+            verdict = "partial";
+        }
+        return new AiDtos.JudgeGuessResponse(providerName(), properties.getModel(), verdict,
+                payload.meaning() == null ? "" : payload.meaning(),
+                payload.reason() == null ? "" : payload.reason());
+    }
+
+    /** Scans one article for high-value words the learner never processed. */
+    public AiDtos.VocabScanResponse scanVocabulary(Long userId, Map<String, String> vars) {
+        AiDtos.VocabScanPayload payload = callStructured("vocab-scan", userId, vars, scanConverter,
+                "AI 漏网词扫描失败，请重试");
+        return new AiDtos.VocabScanResponse(providerName(), properties.getModel(),
+                payload.words() == null ? List.of() : payload.words());
+    }
+
+    /**
+     * Generates a self-test MCQ set for the section the learner is reading. Strict
+     * like the other structured purposes: half-broken questions must not reach the
+     * quiz sheet, so an unparseable reply is a retry error. Output is returned raw;
+     * the reading service validates, trims to the requested count and persists it.
+     */
+    public QuizDtos.QuestionGenResponse generateQuestions(Long userId, Map<String, String> vars) {
+        QuizDtos.QuestionGenPayload payload = callStructured(PURPOSE_QUESTION_GEN, userId, vars,
+                questionGenConverter, "AI 出题失败，请重试");
+        return new QuizDtos.QuestionGenResponse(providerName(), properties.getModel(),
+                promptRegistry.versionLabel(PURPOSE_QUESTION_GEN),
+                payload.questions() == null ? List.of() : payload.questions());
+    }
+
+    /**
+     * Shared strict structured-output call for purposes whose whole value is the
+     * parsed payload (guess verdicts, missed-word lists). Unlike explain(), a null
+     * payload is a hard error here: half-broken verdicts or word lists must never
+     * reach the settlement sheet, so the learner gets a clear retry message.
+     */
+    private <T> T callStructured(String purpose, Long userId, Map<String, String> vars,
+                                 StructuredOutputConverter<T> converter, String failMessage) {
+        String provider = providerName();
+        String systemPrompt = promptRegistry.systemPrompt(purpose);
+        String userPrompt = promptRegistry.render(purpose, vars);
+        log.debug("AI {} request: user={} promptVersion={}", purpose, userId,
+                promptRegistry.versionLabel(purpose));
+        // The prompt embeds learner text, so full bodies stay at trace.
+        log.trace("AI {} system prompt:\n{}", purpose, systemPrompt);
+        log.trace("AI {} user prompt:\n{}", purpose, userPrompt);
+
+        long started = System.currentTimeMillis();
+        boolean recorded = false;
+        try {
+            if (!properties.configured()) {
+                throw ApiException.unavailable("未配置 AI_API_KEY / AI_BASE_URL，请在 .env 或环境变量中设置");
+            }
+            ResponseEntity<ChatResponse, T> response = aiChatClient.prompt()
+                    .system(systemPrompt)
+                    .user(userPrompt)
+                    .options(chatOptions())
+                    .call()
+                    .responseEntity(converter);
+            ChatResponse chatResponse = response.getResponse();
+            String raw = extractContent(chatResponse);
+            T payload = response.getEntity();
+            int latencyMs = (int) (System.currentTimeMillis() - started);
+            Integer promptTokens = tokens(chatResponse, true);
+            Integer completionTokens = tokens(chatResponse, false);
+            log.trace("AI {} raw response ({} chars): {}", purpose, raw.length(), raw);
+            if (payload == null) {
+                log.warn("AI call DEGRADED: provider={} model={} purpose={} latencyMs={} rawChars={}",
+                        provider, properties.getModel(), purpose, latencyMs, raw.length());
+                recordCall(userId, purpose, provider, "DEGRADED", latencyMs, promptTokens, completionTokens,
+                        "Unparseable model output");
+                recorded = true;
+                throw ApiException.unavailable(failMessage);
+            }
+            log.info("AI call SUCCESS: provider={} model={} purpose={} promptVersion={} latencyMs={} promptTokens={} completionTokens={}",
+                    provider, properties.getModel(), purpose, promptRegistry.versionLabel(purpose),
+                    latencyMs, promptTokens, completionTokens);
+            recordCall(userId, purpose, provider, "SUCCESS", latencyMs, promptTokens, completionTokens, null);
+            recorded = true;
+            return payload;
+        } catch (RuntimeException ex) {
+            if (!recorded) {
+                log.error("AI call FAILED: provider={} model={} purpose={} latencyMs={}",
+                        provider, properties.getModel(), purpose, System.currentTimeMillis() - started, ex);
+                recordCall(userId, purpose, provider, "FAILED",
+                        (int) (System.currentTimeMillis() - started), null, null, ex.getMessage());
+            }
             throw toApiException(ex);
         }
     }
@@ -153,15 +363,6 @@ public class AiGateway {
         return properties.remote() ? properties.getProvider().toLowerCase(Locale.ROOT) : "mock";
     }
 
-    private String loadPrompt() {
-        try {
-            return new ClassPathResource("prompts/explain/v2.md")
-                    .getContentAsString(StandardCharsets.UTF_8);
-        } catch (Exception ex) {
-            return "You are an experienced English teacher. Explain the learner's text in Chinese and return JSON.";
-        }
-    }
-
     private static Integer tokens(ChatResponse response, boolean prompt) {
         Usage usage = response.getMetadata().getUsage();
         if (usage == null) {
@@ -188,23 +389,24 @@ public class AiGateway {
         return ApiException.unavailable("AI 服务暂时不可用，请稍后重试");
     }
 
-    private void log(Long userId, String provider, String status, int latencyMs,
-                     Integer inputTokens, Integer outputTokens, String error) {
+    /** Persists the call to ai_call_log; console logging is separate and level-driven. */
+    private void recordCall(Long userId, String purpose, String provider, String status, int latencyMs,
+                            Integer inputTokens, Integer outputTokens, String error) {
         try {
-            AiCallLog log = new AiCallLog();
-            log.setUserId(userId);
-            log.setPurpose("EXPLAIN");
-            log.setProvider(provider);
-            log.setModel(properties.getModel());
-            log.setPromptVersion(PROMPT_VERSION);
-            log.setInputTokens(inputTokens);
-            log.setOutputTokens(outputTokens);
-            log.setLatencyMs(latencyMs);
-            log.setStatus(status);
-            log.setErrorMessage(error == null ? null : error.substring(0, Math.min(error.length(), 1000)));
-            aiCallLogRepository.save(log);
+            AiCallLog entry = new AiCallLog();
+            entry.setUserId(userId);
+            entry.setPurpose(purpose.toUpperCase(Locale.ROOT));
+            entry.setProvider(provider);
+            entry.setModel(properties.getModel());
+            entry.setPromptVersion(promptRegistry.versionLabel(purpose));
+            entry.setInputTokens(inputTokens);
+            entry.setOutputTokens(outputTokens);
+            entry.setLatencyMs(latencyMs);
+            entry.setStatus(status);
+            entry.setErrorMessage(error == null ? null : error.substring(0, Math.min(error.length(), 1000)));
+            aiCallLogRepository.save(entry);
         } catch (Exception ignored) {
-            // Logging must never break the learner's request.
+            // Call recording must never break the learner's request.
         }
     }
 
@@ -214,11 +416,11 @@ public class AiGateway {
      * Spring AI still returns the ChatResponse, so the gateway can inspect the raw
      * text and finish reason and degrade gracefully when the output was truncated.
      */
-    private static final class TolerantExplainConverter implements StructuredOutputConverter<AiDtos.ExplainPayload> {
+    private static final class TolerantConverter<T> implements StructuredOutputConverter<T> {
 
-        private final BeanOutputConverter<AiDtos.ExplainPayload> delegate;
+        private final BeanOutputConverter<T> delegate;
 
-        private TolerantExplainConverter(BeanOutputConverter<AiDtos.ExplainPayload> delegate) {
+        private TolerantConverter(BeanOutputConverter<T> delegate) {
             this.delegate = delegate;
         }
 
@@ -228,7 +430,7 @@ public class AiGateway {
         }
 
         @Override
-        public AiDtos.ExplainPayload convert(String source) {
+        public T convert(String source) {
             try {
                 return delegate.convert(source);
             } catch (RuntimeException ex) {

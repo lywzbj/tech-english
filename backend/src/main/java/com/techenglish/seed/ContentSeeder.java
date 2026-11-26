@@ -9,6 +9,8 @@ import com.techenglish.reading.ReadingArticle;
 import com.techenglish.reading.ReadingArticleRepository;
 import com.techenglish.reading.ReadingQuestion;
 import com.techenglish.reading.ReadingQuestionRepository;
+import com.techenglish.reading.ReadingTag;
+import com.techenglish.reading.ReadingTagRepository;
 import com.techenglish.vocabulary.VocabEntry;
 import com.techenglish.vocabulary.VocabEntryRepository;
 import lombok.RequiredArgsConstructor;
@@ -32,6 +34,7 @@ public class ContentSeeder implements ApplicationRunner {
     private final VocabEntryRepository vocabRepository;
     private final ReadingArticleRepository articleRepository;
     private final ReadingQuestionRepository questionRepository;
+    private final ReadingTagRepository tagRepository;
     private final ObjectMapper objectMapper;
 
     @Override
@@ -110,6 +113,9 @@ public class ContentSeeder implements ApplicationRunner {
             article.setTitle(seed.title());
             article.setSubtitle(seed.subtitle());
             article.setSourceType(seed.sourceType());
+            article.setTagId(tagRepository.findBySourceTypeAndDeleted(seed.sourceType(), 0)
+                    .map(ReadingTag::getId)
+                    .orElse(null));
             article.setSummary(seed.summary());
             article.setContentMd(seed.contentMd());
             int wordCount = countWords(seed.contentMd());

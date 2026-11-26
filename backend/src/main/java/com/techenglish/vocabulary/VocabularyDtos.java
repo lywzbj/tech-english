@@ -1,5 +1,6 @@
 package com.techenglish.vocabulary;
 
+import jakarta.validation.Valid;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
@@ -54,8 +55,33 @@ public final class VocabularyDtos {
             @Size(max = 1000) String contextSentence,
             @Size(max = 500) String definitionZh,
             @Size(max = 500) String definitionEn,
-            @Size(max = 20) String pos
+            @Size(max = 20) String pos,
+            /** How the word reached the deck (e.g. "manual", "post-review"); recorded on the learning event. */
+            @Size(max = 40) String origin,
+            /** Source document label, e.g. the article title for a reading-sourced word. */
+            @Size(max = 120) String sourceDoc
     ) {
+    }
+
+    /**
+     * Post-reading settlement batch import. Items already in the learner's deck are
+     * merged silently and flagged in the result, so the sheet can submit everything
+     * without a 409 dance on the client.
+     */
+    public record BatchAddRequest(@Valid @Size(max = 50) List<AddVocabRequest> items) {
+    }
+
+    public record BatchItemResult(
+            String lemma,
+            Long userVocabId,
+            Long vocabId,
+            boolean alreadyInDeck,
+            String status,
+            int intervalDays
+    ) {
+    }
+
+    public record BatchAddResponse(int total, int added, int alreadyInDeck, List<BatchItemResult> results) {
     }
 
     public record LookupResponse(

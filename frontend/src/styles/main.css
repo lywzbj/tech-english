@@ -63,6 +63,8 @@ html[data-theme='light'] {
   --radius-lg: 24px;
   /* Layout: AppShell sidebar width, also used to anchor page-level fixed rails. */
   --sidebar-width: 248px;
+  /* Initial guess for AppShell topbar height; AppShell overwrites it with the measured height via ResizeObserver. Fixed drawers anchor below it so they never cover the header. */
+  --topbar-height: 80px;
   --font-ui: 'Inter', 'PingFang SC', 'Microsoft YaHei', 'Noto Sans SC', system-ui, sans-serif;
   --font-reading: 'Iowan Old Style', 'Palatino Linotype', 'Book Antiqua', Georgia, 'Songti SC', serif;
   --font-mono: 'JetBrains Mono', 'SFMono-Regular', Consolas, monospace;
@@ -282,7 +284,9 @@ p {
 }
 
 .page {
-  animation: rise-in 0.45s ease both;
+  /* `backwards` (not `both`): a lingering transform on .page would make it the
+     containing block for position:fixed dialogs, clipping the modal mask. */
+  animation: rise-in 0.45s ease backwards;
 }
 
 .page-header {
@@ -657,6 +661,7 @@ p {
   :root,
   html[data-theme] {
     --sidebar-width: 0px;
+    --topbar-height: 70px; /* matches AppShell .topbar compact height */
   }
 }
 

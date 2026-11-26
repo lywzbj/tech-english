@@ -392,7 +392,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
   margin-top: 28px;
   padding-top: 22px;
   border-top: 1px solid var(--line);
-  animation: rise-in 0.35s ease both;
+  animation: rise-in 0.35s ease backwards;
 }
 
 .answer-main h3 {

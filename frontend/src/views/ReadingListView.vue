@@ -1,21 +1,26 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { computed, onMounted, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, type UploadFile } from 'element-plus'
-import { Link, Plus, Reading, UploadFilled } from '@element-plus/icons-vue'
+import { Link, Plus, PriceTag, Reading, UploadFilled } from '@element-plus/icons-vue'
 import { readingApi } from '@/api'
 import { errorMessage } from '@/utils/error'
-import type { ReadingArticleSummary } from '@/types/api'
+import type { ReadingArticleSummary, ReadingTag } from '@/types/api'
 
 const MAX_FILE_BYTES = 1024 * 1024
 // Keep in sync with ImportArticleRequest @Size(max = 200000) on the backend.
 const MAX_CONTENT_CHARS = 200000
 
 const router = useRouter()
+const route = useRoute()
 const articles = ref<ReadingArticleSummary[]>([])
+const tags = ref<ReadingTag[]>([])
 const loading = ref(true)
 const error = ref('')
-const activeType = ref('ALL')
+type TagFilter = number | 'ALL' | 'NONE'
+const activeTag = ref<TagFilter>('ALL')
+const listTotal = ref(0)
+const listReadCount = ref(0)
 const dialogOpen = ref(false)
 const importMode = ref<'file' | 'text' | 'url'>('file')
 const importing = ref(false)
@@ -25,17 +30,17 @@ const form = ref({
   subtitle: '',
   contentMd: '',
   sourceUrl: '',
-  sourceType: 'CUSTOM',
+  tagId: null as number | null,
 })
-const urlForm = ref({ url: '', title: '' })
+const urlForm = ref({ url: '', title: '', tagId: null as number | null })
 
-const fileForm = ref({ title: '', subtitle: '', sourceType: 'CUSTOM' })
+const fileForm = ref({ title: '', subtitle: '', tagId: null as number | null })
 const fileName = ref('')
 const fileContent = ref('')
 const fileBytes = ref(0)
 
 function resetFileSelection() {
-  fileForm.value = { title: '', subtitle: '', sourceType: 'CUSTOM' }
+  fileForm.value = { title: '', subtitle: '', tagId: null }
   fileName.value = ''
   fileContent.value = ''
   fileBytes.value = 0
@@ -79,31 +84,107 @@ async function onFilePicked(uploadFile: UploadFile) {
   fileForm.value.title = title.slice(0, 200)
 }
 
-const filters = [
-  { value: 'ALL', label: '全部' },
-  { value: 'IELTS', label: '雅思学术' },
-  { value: 'TECH', label: '技术文档' },
-  { value: 'CUSTOM', label: '我的导入' },
-]
+const enabledTags = computed(() => tags.value.filter((tag) => tag.enabled))
+
+type FilterOption = { value: TagFilter; label: string; off?: boolean }
+
+/**
+ * Filters follow the tags articles actually use, so disabling a tag no longer
+ * hides its articles from the filter row. Untagged rows get their own bucket.
+ */
+const filterOptions = computed<FilterOption[]>(() => {
+  const usedTagIds = new Set<number>()
+  let hasUntagged = false
+  for (const article of articles.value) {
+    if (article.tagId == null) hasUntagged = true
+    else usedTagIds.add(article.tagId)
+  }
+  const options: FilterOption[] = [{ value: 'ALL', label: '全部' }]
+  for (const tag of tags.value) {
+    if (usedTagIds.has(tag.id) || tag.id === activeTag.value) {
+      options.push({ value: tag.id, label: tag.name, off: !tag.enabled })
+    }
+  }
+  if (hasUntagged) options.push({ value: 'NONE', label: '未分类' })
+  return options
+})
 
 const filtered = computed(() => {
-  if (activeType.value === 'ALL') return articles.value
-  return articles.value.filter((article) => article.sourceType === activeType.value)
+  if (activeTag.value === 'ALL') return articles.value
+  if (activeTag.value === 'NONE') return articles.value.filter((article) => article.tagId == null)
+  return articles.value.filter((article) => article.tagId === activeTag.value)
 })
-const featured = computed(() => filtered.value.find((article) => !article.read) ?? filtered.value[0] ?? null)
-const readCount = computed(() => articles.value.filter((article) => article.read).length)
+const featured = computed(
+  () => filtered.value.find((article) => !article.read) ?? filtered.value[0] ?? null,
+)
+const emptyTitle = computed(() => {
+  if (activeTag.value === 'NONE') return '没有未分类的文章'
+  if (activeTag.value === 'ALL') return '文章库还没有文章'
+  return '这个分类还没有文章'
+})
 
-function typeLabel(type: string) {
-  return { IELTS: 'IELTS', TECH: 'TECH', CUSTOM: 'IMPORTED' }[type] ?? type
+/** Raw resume position 0-100. It never implies the article is finished. */
+function progressPercent(article: ReadingArticleSummary) {
+  return Math.min(100, Math.max(0, article.scrollPercent ?? 0))
 }
+
+/** Finished articles show a full bar even though completion resets the resume point. */
+function displayPercent(article: ReadingArticleSummary) {
+  return article.read ? 100 : progressPercent(article)
+}
+
+function actionLabel(article: ReadingArticleSummary) {
+  if (article.read) return '重新打开'
+  return progressPercent(article) <= 0 ? '开始阅读' : '继续阅读'
+}
+
+function parseTagQuery(value: unknown): TagFilter {
+  if (typeof value !== 'string' || value === '') return 'ALL'
+  if (value === 'NONE') return 'NONE'
+  if (!/^\d+$/.test(value)) return 'ALL'
+  const id = Number(value)
+  return id > 0 ? id : 'ALL'
+}
+
+function isKnownTagFilter(value: TagFilter) {
+  if (value === 'ALL') return true
+  if (value === 'NONE') return articles.value.some((article) => article.tagId == null)
+  return tags.value.some((tag) => tag.id === value)
+}
+
+/** Filter state lives in `?tag=` so refresh and browser-back keep the same category. */
+function syncTagFromQuery() {
+  const next = parseTagQuery(route.query.tag)
+  if (!isKnownTagFilter(next)) {
+    activeTag.value = 'ALL'
+    if (route.query.tag !== undefined) {
+      const query = { ...route.query }
+      delete query.tag
+      void router.replace({ query })
+    }
+    return
+  }
+  activeTag.value = next
+}
+
+function selectTag(value: TagFilter) {
+  if (activeTag.value === value) return
+  activeTag.value = value
+  const query = { ...route.query }
+  if (value === 'ALL') delete query.tag
+  else query.tag = String(value)
+  void router.replace({ query })
+}
+
+watch(() => route.query.tag, syncTagFromQuery)
 
 function openArticle(article: ReadingArticleSummary) {
   router.push(`/reading/${article.id}`)
 }
 
 function openImport() {
-  form.value = { title: '', subtitle: '', contentMd: '', sourceUrl: '', sourceType: 'CUSTOM' }
-  urlForm.value = { url: '', title: '' }
+  form.value = { title: '', subtitle: '', contentMd: '', sourceUrl: '', tagId: null }
+  urlForm.value = { url: '', title: '', tagId: null }
   resetFileSelection()
   importMode.value = 'file'
   dialogOpen.value = true
@@ -118,9 +199,14 @@ async function importArticle() {
         ElMessage.warning('请输入网页地址')
         return
       }
+      if (urlForm.value.tagId == null) {
+        ElMessage.warning('请选择文档类型')
+        return
+      }
       detail = await readingApi.importUrl({
         url: urlForm.value.url.trim(),
         title: urlForm.value.title.trim() || undefined,
+        tagId: urlForm.value.tagId,
       })
     } else if (importMode.value === 'file') {
       if (!fileContent.value) {
@@ -131,15 +217,23 @@ async function importArticle() {
         ElMessage.warning('请填写文章标题')
         return
       }
+      if (fileForm.value.tagId == null) {
+        ElMessage.warning('请选择文档类型')
+        return
+      }
       detail = await readingApi.importText({
         title: fileForm.value.title.trim(),
         subtitle: fileForm.value.subtitle.trim() || `来自文件 ${fileName.value}`,
         contentMd: fileContent.value,
-        sourceType: fileForm.value.sourceType,
+        tagId: fileForm.value.tagId,
       })
     } else {
       if (!form.value.title.trim() || form.value.contentMd.trim().length < 80) {
         ElMessage.warning('请填写标题，并粘贴至少一段完整文本')
+        return
+      }
+      if (form.value.tagId == null) {
+        ElMessage.warning('请选择文档类型')
         return
       }
       detail = await readingApi.importText({
@@ -147,7 +241,7 @@ async function importArticle() {
         subtitle: form.value.subtitle.trim() || undefined,
         contentMd: form.value.contentMd.trim(),
         sourceUrl: form.value.sourceUrl.trim() || undefined,
-        sourceType: form.value.sourceType,
+        tagId: form.value.tagId,
       })
     }
     ElMessage.success('文章已加入阅读实验室')
@@ -164,8 +258,12 @@ async function load() {
   loading.value = true
   error.value = ''
   try {
-    const response = await readingApi.list()
+    const [response, tagResponse] = await Promise.all([readingApi.list(), readingApi.tags()])
     articles.value = response.articles
+    tags.value = tagResponse
+    listTotal.value = response.total
+    listReadCount.value = response.readCount
+    syncTagFromQuery()
   } catch (err) {
     error.value = errorMessage(err, '加载文章失败')
   } finally {
@@ -187,7 +285,10 @@ onMounted(load)
         </p>
       </div>
       <div class="header-actions">
-        <span class="read-stat">{{ readCount }} / {{ articles.length }} 已读</span>
+        <span class="read-stat">{{ listReadCount }} / {{ listTotal }} 读完</span>
+        <el-button @click="router.push('/reading/tags')">
+          <el-icon><PriceTag /></el-icon> 标签管理
+        </el-button>
         <el-button type="primary" @click="openImport">
           <el-icon><Plus /></el-icon> 导入文章
         </el-button>
@@ -207,7 +308,7 @@ onMounted(load)
       <section v-if="featured" class="featured">
         <div class="featured-copy">
           <div class="featured-tags">
-            <span class="pill green">{{ typeLabel(featured.sourceType) }}</span>
+            <span class="pill green">{{ featured.tagName }}</span>
             <span class="pill">{{ featured.cefrLevel }}</span>
             <span class="pill">{{ featured.estimatedMinutes }} min</span>
           </div>
@@ -220,7 +321,7 @@ onMounted(load)
           </div>
           <el-button type="primary" size="large" round @click="openArticle(featured)">
             <el-icon><Reading /></el-icon>
-            {{ featured.read ? '重新打开' : '开始阅读' }}
+            {{ actionLabel(featured) }}
           </el-button>
         </div>
         <div class="featured-art">
@@ -235,14 +336,17 @@ onMounted(load)
       <div class="list-toolbar">
         <div class="filter-row">
           <button
-            v-for="filter in filters"
+            v-for="filter in filterOptions"
             :key="filter.value"
             type="button"
             class="filter"
-            :class="{ active: activeType === filter.value }"
-            @click="activeType = filter.value"
+            :class="{ active: activeTag === filter.value, off: filter.off }"
+            :aria-pressed="activeTag === filter.value"
+            :title="filter.off ? `${filter.label}已停用，仅用于查看历史文章` : undefined"
+            @click="selectTag(filter.value)"
           >
             {{ filter.label }}
+            <span v-if="filter.off" class="filter-off">停用</span>
           </button>
         </div>
         <span class="list-count">{{ filtered.length }} 篇</span>
@@ -250,7 +354,7 @@ onMounted(load)
 
       <div v-if="filtered.length === 0" class="empty">
         <span class="empty-icon">Aa</span>
-        <strong>这个分类还没有文章</strong>
+        <strong>{{ emptyTitle }}</strong>
         <el-button type="primary" plain @click="openImport">导入一篇</el-button>
       </div>
 
@@ -259,13 +363,31 @@ onMounted(load)
           v-for="article in filtered"
           :key="article.id"
           class="article-card card"
-          :class="{ read: article.read }"
+          :class="{ 'is-done': article.read }"
           @click="openArticle(article)"
         >
           <div class="article-top">
-            <span class="source-tag" :class="article.sourceType.toLowerCase()">{{ typeLabel(article.sourceType) }}</span>
-            <span v-if="article.read" class="read-tag">已读</span>
-            <span v-else class="unread-tag">未读</span>
+            <span class="source-tag" :class="article.sourceType.toLowerCase()">{{ article.tagName }}</span>
+            <span
+              class="progress-tag"
+              :class="{ done: article.read, reading: !article.read && progressPercent(article) > 0 }"
+            >
+              {{ article.read ? '已读完' : progressPercent(article) >= 100 ? '待完成' : `${progressPercent(article)}%` }}
+            </span>
+          </div>
+          <div
+            class="progress-track"
+            role="progressbar"
+            :aria-label="`${article.title} 阅读进度`"
+            :aria-valuenow="displayPercent(article)"
+            aria-valuemin="0"
+            aria-valuemax="100"
+          >
+            <div
+              class="progress-fill"
+              :class="{ done: article.read }"
+              :style="{ width: displayPercent(article) + '%' }"
+            />
           </div>
           <h3>{{ article.title }}</h3>
           <p class="article-sub">{{ article.subtitle }}</p>
@@ -311,11 +433,9 @@ onMounted(load)
                 <el-input v-model="fileForm.subtitle" placeholder="留空则显示“来自文件 xxx.md”" />
               </el-form-item>
             </div>
-            <el-form-item label="类型">
-              <el-select v-model="fileForm.sourceType" style="width: 100%">
-                <el-option label="我的导入" value="CUSTOM" />
-                <el-option label="雅思学术" value="IELTS" />
-                <el-option label="技术文档" value="TECH" />
+            <el-form-item label="文档类型" required>
+              <el-select v-model="fileForm.tagId" placeholder="请选择文档类型" style="width: 100%">
+                <el-option v-for="tag in enabledTags" :key="tag.id" :label="tag.name" :value="tag.id" />
               </el-select>
             </el-form-item>
           </el-form>
@@ -342,11 +462,9 @@ onMounted(load)
               <el-form-item label="原始链接（可选）">
                 <el-input v-model="form.sourceUrl" placeholder="https://..." />
               </el-form-item>
-              <el-form-item label="类型">
-                <el-select v-model="form.sourceType" style="width: 100%">
-                  <el-option label="我的导入" value="CUSTOM" />
-                  <el-option label="雅思学术" value="IELTS" />
-                  <el-option label="技术文档" value="TECH" />
+              <el-form-item label="文档类型" required>
+                <el-select v-model="form.tagId" placeholder="请选择文档类型" style="width: 100%">
+                  <el-option v-for="tag in enabledTags" :key="tag.id" :label="tag.name" :value="tag.id" />
                 </el-select>
               </el-form-item>
             </div>
@@ -363,6 +481,11 @@ onMounted(load)
             </el-form-item>
             <el-form-item label="标题（可选，留空使用网页标题）">
               <el-input v-model="urlForm.title" />
+            </el-form-item>
+            <el-form-item label="文档类型" required>
+              <el-select v-model="urlForm.tagId" placeholder="请选择文档类型" style="width: 100%">
+                <el-option v-for="tag in enabledTags" :key="tag.id" :label="tag.name" :value="tag.id" />
+              </el-select>
             </el-form-item>
           </el-form>
         </el-tab-pane>
@@ -540,6 +663,20 @@ onMounted(load)
   font-weight: 700;
 }
 
+.filter.off {
+  opacity: 0.72;
+}
+
+.filter-off {
+  margin-left: 4px;
+  padding: 0 4px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 500;
+}
+
 .list-count {
   color: var(--faint);
   font-family: var(--font-mono);
@@ -567,7 +704,7 @@ onMounted(load)
   box-shadow: var(--shadow-md);
 }
 
-.article-card.read {
+.article-card.is-done {
   background: var(--surface-2);
 }
 
@@ -602,18 +739,38 @@ onMounted(load)
   color: var(--amber-text);
 }
 
-.read-tag,
-.unread-tag {
+.progress-tag {
   margin-left: auto;
+  color: var(--faint);
+  font-family: var(--font-mono);
   font-size: 11px;
 }
 
-.read-tag {
+.progress-tag.reading {
+  color: var(--amber-text);
+}
+
+.progress-tag.done {
   color: var(--green-2);
 }
 
-.unread-tag {
-  color: var(--faint);
+.progress-track {
+  height: 3px;
+  margin-top: 12px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--surface-3);
+}
+
+.progress-fill {
+  height: 100%;
+  border-radius: inherit;
+  background: var(--amber);
+  transition: width 320ms ease;
+}
+
+.progress-fill.done {
+  background: var(--green);
 }
 
 .article-card h3 {

@@ -3,6 +3,7 @@ import { computed, nextTick, onMounted, onUnmounted, reactive, ref, watch } from
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import {
+  Aim,
   ArrowLeft,
   ArrowUp,
   ChatDotRound,
@@ -10,8 +11,9 @@ import {
   Close,
   EditPen,
   List,
-  Loading,
+  MagicStick,
   Plus,
+  PriceTag,
   Search,
   ZoomIn,
   ZoomOut,
@@ -19,16 +21,20 @@ import {
 import ContentDrawer from '@/components/common/ContentDrawer.vue'
 import ReadingAssistantPanel from '@/components/reading/ReadingAssistantPanel.vue'
 import ReadingComprehensionPanel from '@/components/reading/ReadingComprehensionPanel.vue'
+import ReadingQuizPanel from '@/components/reading/ReadingQuizPanel.vue'
 import ReadingToc from '@/components/reading/ReadingToc.vue'
+import VocabSettlementDialog from '@/components/reading/VocabSettlementDialog.vue'
+import { normWord, useVocabLedger, type SettleSummary } from '@/composables/useVocabLedger'
 import { aiApi, readingApi, vocabularyApi } from '@/api'
 import { completeTaskByRef } from '@/composables/useTaskCompletion'
-import { extractToc, renderMarkdown } from '@/utils/markdown'
+import { extractSections, extractToc, renderMarkdown } from '@/utils/markdown'
 import { errorMessage } from '@/utils/error'
 import type {
   AiExplainResponse,
   ReadingArticleDetail,
   ReadingCompleteResponse,
   VocabLookup,
+  VocabularyBatchItem,
 } from '@/types/api'
 
 const route = useRoute()
@@ -45,10 +51,57 @@ const articleHtml = computed(() => {
 const toc = computed(() => extractToc(article.value?.contentMd ?? ''))
 const fontScale = ref(1)
 
+// --- AI 自测的「当前小节」：滚动到哪一节，出题就针对哪一节 ---------------------
+// toc 与 sections 来自同一份标题扫描，下标一一对应。
+const sections = computed(() => extractSections(article.value?.contentMd ?? ''))
+const activeHeadingIndex = ref(-1)
+
+function updateActiveHeading() {
+  let idx = -1
+  for (let i = 0; i < toc.value.length; i++) {
+    const el = document.getElementById(toc.value[i].id)
+    if (!el) continue
+    if (el.getBoundingClientRect().top <= 140) idx = i
+    else break
+  }
+  activeHeadingIndex.value = idx
+}
+
+const MAX_SECTION_CHARS = 18000
+
+/** null 时后端退回整篇文章出题（无标题的短文）。 */
+const currentQuizSection = computed(() => {
+  const section = sections.value[activeHeadingIndex.value]
+  if (!section || !article.value) return null
+  const text = article.value.contentMd.split('\n').slice(section.startLine, section.endLine).join('\n')
+  return { title: section.text, text: text.slice(0, MAX_SECTION_CHARS) }
+})
+
 // 文章目录做成右侧折叠抽屉：展开时悬浮在正文右侧的空白区上，不挤压阅读区宽度。
 const TOC_OPEN_KEY = 'reading.tocOpen'
 const tocOpen = ref(localStorage.getItem(TOC_OPEN_KEY) === '1')
 watch(tocOpen, (open) => localStorage.setItem(TOC_OPEN_KEY, open ? '1' : '0'))
+
+// 读后生词账本：猜词/查词按文章记录在 localStorage，结算页从中读取。
+const ledgerDocId = computed(() => {
+  const id = Number(route.params.id)
+  return Number.isFinite(id) && id > 0 ? id : null
+})
+const {
+  ledger,
+  recordGuess,
+  recordLooked,
+  setGuessDraft,
+  setGuessVerdict,
+  setScanned,
+  removeWords,
+  processedWords,
+  pendingCount,
+} = useVocabLedger(ledgerDocId)
+const settlementOpen = ref(false)
+const judgingWord = ref('')
+const scanning = ref(false)
+const scanError = ref('')
 
 const selectedText = ref('')
 const selectedContext = ref('')
@@ -56,29 +109,7 @@ const selectionRect = ref<DOMRect | null>(null)
 const toolbarVisible = computed(() => Boolean(selectedText.value && selectionRect.value))
 const isWordSelection = computed(() => /^[A-Za-z][A-Za-z'-]*$/.test(selectedText.value.trim()))
 
-// Right-click context menu on the article body: translate / explain the selection.
-const ctxMenuVisible = ref(false)
-const ctxMenuEl = ref<HTMLElement | null>(null)
-const ctxMode = ref<'menu' | 'result'>('menu')
-const ctxX = ref(0)
-const ctxY = ref(0)
-const ctxLoading = ref(false)
-const ctxMoreLoading = ref(false)
-const ctxTranslation = ref('')
-const ctxError = ref('')
-const ctxSource = ref('')
-const ctxContext = ref('')
-const ctxIsWord = ref(false)
-
-const ctxMenuStyle = computed(() => {
-  const width = ctxMode.value === 'result' ? 250 : 190
-  const height = ctxMode.value === 'result' ? 190 : 140
-  const left = Math.max(8, Math.min(ctxX.value, window.innerWidth - width - 8))
-  const top = Math.max(8, Math.min(ctxY.value, window.innerHeight - height - 8))
-  return { left: `${left}px`, top: `${top}px` }
-})
-
-// 左侧抽屉同一时刻只承载一个面板：AI 助手或阅读理解，互斥切换。
+// 左侧抽屉同一时刻只承载一个面板：AI 助手或阅读理解，互斥切换。预习是独立页面。
 const activeDrawer = ref<'none' | 'assistant' | 'questions'>('none')
 const panelDrawerTitle = computed(() =>
   activeDrawer.value === 'assistant' ? 'AI 助手' : '阅读理解',
@@ -89,6 +120,7 @@ const panelDrawerEyebrow = computed(() =>
 
 function toggleQuestions() {
   activeDrawer.value = activeDrawer.value === 'questions' ? 'none' : 'questions'
+  if (activeDrawer.value === 'questions') void nextTick(updateActiveHeading)
 }
 
 function onPanelDrawerToggle(open: boolean) {
@@ -102,6 +134,31 @@ const wordError = ref('')
 const aiResult = ref<AiExplainResponse | null>(null)
 const aiLoading = ref(false)
 const aiError = ref('')
+
+// 预习在独立页面完成（reading-preview 路由）；本页只负责进文章前的询问与侧签角标。
+const previewAskOpen = ref(false)
+const hasSavedPreview = ref(false)
+
+function goPreview() {
+  previewAskOpen.value = false
+  router.push({ name: 'reading-preview', params: { id: Number(route.params.id) } })
+}
+
+async function loadPreviewState(id: number) {
+  previewAskOpen.value = false
+  hasSavedPreview.value = false
+  try {
+    const state = await readingApi.previewState(id)
+    if (state.exists) {
+      hasSavedPreview.value = true
+    } else if (article.value && !article.value.article.read) {
+      // 进入文章前的询问：只在该用户还没存过本篇预习、且文章未读完时弹出。
+      previewAskOpen.value = true
+    }
+  } catch {
+    // 预习是可选增强，状态查询失败不打扰阅读。
+  }
+}
 
 const answers = reactive<Record<number, string>>({})
 const submitting = ref(false)
@@ -139,10 +196,6 @@ const toolbarStyle = computed(() => {
   }
 })
 
-function typeLabel(type: string) {
-  return { IELTS: 'IELTS Academic', TECH: 'Tech Doc', CUSTOM: 'Imported' }[type] ?? type
-}
-
 function sourceClass(type: string) {
   return type.toLowerCase()
 }
@@ -160,6 +213,9 @@ async function load(id: string) {
   showBackTop.value = false
   savedPercent.value = 0
   pendingPercent = 0
+  settlementOpen.value = false
+  scanError.value = ''
+  judgingWord.value = ''
   Object.keys(answers).forEach((key) => delete answers[Number(key)])
   try {
     article.value = await readingApi.detail(Number(id))
@@ -175,6 +231,8 @@ async function load(id: string) {
   }
   if (article.value) {
     await restoreReadingPosition()
+    applyWordMarks()
+    void loadPreviewState(Number(id))
   }
 }
 
@@ -185,6 +243,7 @@ async function restoreReadingPosition() {
   const max = document.documentElement.scrollHeight - window.innerHeight
   if (max < 400) return
   window.scrollTo({ top: Math.round((percent / 100) * max), behavior: 'auto' })
+  updateActiveHeading()
   ElMessage.info(`已跳转到上次阅读位置（${percent}%）`)
 }
 
@@ -208,7 +267,7 @@ function flushProgress() {
 
 function onWindowScroll() {
   showBackTop.value = window.scrollY > 480
-  if (ctxMenuVisible.value) closeCtxMenu()
+  if (activeDrawer.value === 'questions') updateActiveHeading()
   if (!article.value || completeResult.value) return
   pendingPercent = pageScrollPercent()
   if (progressTimer === undefined) {
@@ -258,125 +317,8 @@ function hideToolbar() {
   selectionRect.value = null
 }
 
-function isWordChar(ch: string | undefined) {
-  return Boolean(ch && /[A-Za-z'-]/.test(ch))
-}
-
-// Select the word sitting under the caret at (x, y) so right-clicking a bare word works.
-function selectWordAtPoint(x: number, y: number) {
-  const hit =
-    typeof document.caretRangeFromPoint === 'function'
-      ? document.caretRangeFromPoint(x, y)
-      : null
-  let node: Node | null = hit?.startContainer ?? null
-  let offset = hit?.startOffset ?? 0
-  if (!node && typeof (document as any).caretPositionFromPoint === 'function') {
-    const pos = (document as any).caretPositionFromPoint(x, y)
-    node = pos?.offsetNode ?? null
-    offset = pos?.offset ?? 0
-  }
-  if (!node || node.nodeType !== Node.TEXT_NODE || !articleBody.value?.contains(node)) return false
-  const text = node.textContent ?? ''
-  let start = offset
-  if (!isWordChar(text[start]) && isWordChar(text[start - 1])) start -= 1
-  if (!isWordChar(text[start])) return false
-  let left = start
-  while (left > 0 && isWordChar(text[left - 1])) left -= 1
-  let right = start
-  while (right < text.length - 1 && isWordChar(text[right + 1])) right += 1
-  const range = document.createRange()
-  range.setStart(node, left)
-  range.setEnd(node, right + 1)
-  const selection = window.getSelection()
-  selection?.removeAllRanges()
-  selection?.addRange(range)
-  return true
-}
-
-function onArticleContextMenu(event: MouseEvent) {
-  if (!articleBody.value?.contains(event.target as Node)) return
-  const selection = window.getSelection()
-  if (!selection?.toString().trim() && !selectWordAtPoint(event.clientX, event.clientY)) return
-  handleSelection()
-  if (!selectedText.value) return
-  event.preventDefault()
-  selectionRect.value = null // suppress the floating toolbar while the menu is open
-  // Snapshot the selection: the shared selectedText/selectedContext can be
-  // cleared by mouseup etc. while the menu is open, and every action below
-  // must operate on exactly what the user right-clicked.
-  ctxSource.value = selectedText.value
-  ctxContext.value = selectedContext.value
-  ctxIsWord.value = isWordSelection.value
-  ctxMode.value = 'menu'
-  ctxTranslation.value = ''
-  ctxError.value = ''
-  ctxX.value = event.clientX
-  ctxY.value = event.clientY
-  ctxMenuVisible.value = true
-}
-
-function closeCtxMenu() {
-  ctxMenuVisible.value = false
-  ctxLoading.value = false
-}
-
-function onCtxDocPointerDown(event: PointerEvent) {
-  if (ctxMenuEl.value?.contains(event.target as Node)) return
-  closeCtxMenu()
-}
-
-function onCtxKeyDown(event: KeyboardEvent) {
-  if (event.key === 'Escape') closeCtxMenu()
-}
-
-async function ctxTranslate() {
-  ctxMode.value = 'result'
-  ctxLoading.value = true
-  ctxError.value = ''
-  ctxTranslation.value = ''
-  try {
-    const result = await aiApi.explain({
-      text: ctxSource.value.trim(),
-      context: selectedContext.value,
-      mode: ctxIsWord.value ? 'word' : 'sentence',
-    })
-    ctxTranslation.value = result.translation || result.explanation || '暂无翻译结果'
-  } catch (err) {
-    ctxError.value = errorMessage(err, '翻译失败')
-  } finally {
-    ctxLoading.value = false
-  }
-}
-
-async function ctxExplain() {
-  // Always act on the snapshot captured when the menu opened, never on the
-  // shared selection state which can be cleared before this click lands.
-  const text = ctxSource.value.trim()
-  if (!text) {
-    closeCtxMenu()
-    return
-  }
-  ctxMoreLoading.value = true
-  try {
-    await explainSelected(ctxIsWord.value ? 'word' : 'sentence', { text, context: ctxContext.value })
-    closeCtxMenu()
-  } finally {
-    ctxMoreLoading.value = false
-  }
-}
-
-function ctxLookup() {
-  closeCtxMenu()
-  void lookupSelected(ctxSource.value)
-}
-
-function ctxAddWord() {
-  closeCtxMenu()
-  void addSelectedWord(ctxSource.value)
-}
-
-async function lookupSelected(override?: string) {
-  const word = (override ?? selectedText.value).trim()
+async function lookupSelected() {
+  const word = selectedText.value.trim()
   if (!word) return
   wordLoading.value = true
   wordError.value = ''
@@ -385,9 +327,16 @@ async function lookupSelected(override?: string) {
   activeDrawer.value = 'assistant'
   try {
     wordResult.value = await vocabularyApi.lookup(word)
+    recordLooked(word, sentenceWithWord(selectedContext.value, word), wordResult.value)
   } catch (err) {
     wordError.value = errorMessage(err, '词库里暂时没有这个词')
     await explainSelected('word', { text: word })
+    // Record even when the AI fallback failed: the word was still looked up,
+    // and the settlement page renders a raw word when definitions are absent.
+    recordLooked(word, sentenceWithWord(selectedContext.value, word), null, {
+      translation: aiResult.value?.translation ?? '',
+      explanation: aiResult.value?.explanation ?? '',
+    })
   } finally {
     wordLoading.value = false
   }
@@ -414,12 +363,10 @@ async function explainSelected(mode?: 'word' | 'sentence', override?: { text?: s
   }
 }
 
-async function addSelectedWord(override?: string) {
-  // An explicit override (context-menu path) wins over the last lookup's lemma,
-  // which may be stale from a previously different word.
-  const word = (override ?? wordResult.value?.lemma ?? selectedText.value).trim()
+async function addSelectedWord() {
+  const word = (wordResult.value?.lemma ?? selectedText.value).trim()
   if (!word) return
-  const context = override ? ctxContext.value : selectedContext.value
+  const context = selectedContext.value
   const pending = ElMessage({ message: '正在加入生词本…', duration: 0 })
   try {
     // The curated dictionary gives pos/phonetic/definitions for free. A word met
@@ -443,6 +390,8 @@ async function addSelectedWord(override?: string) {
       ...details,
     })
     if (wordResult.value) wordResult.value.inDeck = true
+    // 即时入库也算处理过，从读后账本里清掉，避免结算页重复。
+    removeWords([word, lookup?.lemma ?? ''])
     ElMessage.success('已加入词汇本')
   } catch (err) {
     ElMessage.error(errorMessage(err, '加入失败'))
@@ -467,6 +416,159 @@ async function aiDefinitionFor(word: string, context: string) {
     return { ...empty, definitionZh }
   } catch {
     return empty
+  }
+}
+
+/* ---------- 读后生词结算（猜 → 验证 → 入库） ---------- */
+
+function escapeRegExp(text: string) {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
+/** 从选中所在的块文本里抠出包含该词的原句（取不到就退化为整块文本）。 */
+function sentenceWithWord(blockText: string, word: string): string {
+  const sentences = blockText.split(/(?<=[.!?])\s+/)
+  const hit = sentences.find((s) => s.toLowerCase().includes(word.toLowerCase()))
+  return (hit ?? blockText).trim().slice(0, 300)
+}
+
+/** 「猜」标记：不打断阅读，只记进账本并在正文加虚线（US1）。 */
+function markGuessFromSelection() {
+  const word = selectedText.value.trim()
+  if (!/^[A-Za-z][A-Za-z'-]*$/.test(word)) return
+  recordGuess(word, sentenceWithWord(selectedContext.value, word))
+  ElMessage({ message: `已标记「${word}」，读完后在「读后生词」结算`, duration: 1600 })
+  hideToolbar()
+}
+
+/**
+ * 账本里未处理的词在正文加下划线：猜=虚线、查=实线。
+ * 入库或忽略后 removeWords 触发账本 watch，标注随之消失。
+ */
+function applyWordMarks() {
+  const root = articleBody.value
+  if (!root) return
+  root.querySelectorAll('span.word-mark').forEach((mark) => {
+    const parent = mark.parentNode
+    if (!parent) return
+    parent.replaceChild(document.createTextNode(mark.textContent ?? ''), mark)
+    parent.normalize()
+  })
+  const guessWords = ledger.value.guesses.filter((g) => !g.verdict).map((g) => g.word)
+  const lookedWords = ledger.value.looked.map((l) => l.word)
+  const all = [...new Set([...guessWords, ...lookedWords].map((w) => w.trim().toLowerCase()))].filter(Boolean)
+  if (!all.length) return
+  const regex = new RegExp(`\\b(${all.map(escapeRegExp).join('|')})\\b`, 'gi')
+  const guessSet = new Set(guessWords.map((w) => w.toLowerCase()))
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
+    acceptNode(node) {
+      const value = node.nodeValue
+      if (!value || !value.trim()) return NodeFilter.FILTER_REJECT
+      if (node.parentElement?.closest('a, code, pre')) return NodeFilter.FILTER_REJECT
+      regex.lastIndex = 0
+      return regex.test(value) ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_REJECT
+    },
+  })
+  const targets: Text[] = []
+  while (walker.nextNode()) targets.push(walker.currentNode as Text)
+  for (const text of targets) {
+    const value = text.nodeValue ?? ''
+    const frag = document.createDocumentFragment()
+    let cursor = 0
+    regex.lastIndex = 0
+    let match: RegExpExecArray | null
+    while ((match = regex.exec(value))) {
+      if (match.index > cursor) {
+        frag.appendChild(document.createTextNode(value.slice(cursor, match.index)))
+      }
+      const span = document.createElement('span')
+      span.className = `word-mark ${guessSet.has(match[0].toLowerCase()) ? 'mark-guess' : 'mark-looked'}`
+      span.textContent = match[0]
+      frag.appendChild(span)
+      cursor = match.index + match[0].length
+    }
+    if (cursor < value.length) frag.appendChild(document.createTextNode(value.slice(cursor)))
+    text.parentNode?.replaceChild(frag, text)
+  }
+}
+
+watch(ledger, () => nextTick(applyWordMarks), { deep: true })
+watch(articleHtml, () => nextTick(applyWordMarks))
+
+async function runJudgeGuess(word: string) {
+  if (judgingWord.value) return
+  const entry = ledger.value.guesses.find((g) => normWord(g.word) === normWord(word))
+  if (!entry || entry.verdict || !entry.guess.trim()) return
+  judgingWord.value = entry.word
+  try {
+    const res = await aiApi.judgeGuess({
+      word: entry.word,
+      guess: entry.guess,
+      context: entry.sentences[0],
+    })
+    setGuessVerdict(entry.word, res.verdict, res.meaning, res.reason)
+  } catch (err) {
+    // 降级模式：AI 网关不可达时结算流程不断，词仍然可以入库（spec 分支）。
+    setGuessVerdict(entry.word, 'degraded', '', `${errorMessage(err, 'AI 暂不可用')}；可先入库，复习时再验证`)
+  } finally {
+    judgingWord.value = ''
+  }
+}
+
+async function runScanMissed() {
+  if (!article.value || scanning.value) return
+  scanning.value = true
+  scanError.value = ''
+  try {
+    const res = await readingApi.vocabScan(article.value.article.id, processedWords())
+    const known = new Set(processedWords().map(normWord))
+    setScanned(res.words.filter((w) => !known.has(normWord(w.word))))
+  } catch (err) {
+    scanError.value = errorMessage(err, 'AI 扫描暂不可用')
+  } finally {
+    scanning.value = false
+  }
+}
+
+async function runSettle(words: string[]): Promise<SettleSummary> {
+  if (!article.value) throw new Error('文章还没加载好，请稍后重试')
+  const items: VocabularyBatchItem[] = []
+  for (const word of words) {
+    const key = normWord(word)
+    const guess = ledger.value.guesses.find((g) => normWord(g.word) === key)
+    const looked = ledger.value.looked.find((l) => normWord(l.word) === key)
+    const missed = ledger.value.scanned.find((m) => normWord(m.word) === key)
+    const contextSentence = guess?.sentences[0] ?? looked?.sentences[0] ?? missed?.sentence ?? ''
+    let definitionZh = guess && guess.verdict !== 'degraded' ? guess.meaning : ''
+    let definitionEn = ''
+    let pos = ''
+    if (looked?.lookup) {
+      definitionZh = looked.lookup.definitionZh
+      definitionEn = looked.lookup.definitionEn
+      pos = looked.lookup.pos
+    } else if (looked?.ai) {
+      definitionZh = looked.ai.translation || looked.ai.explanation
+    } else if (missed) {
+      definitionZh = missed.meaning
+    }
+    items.push({
+      lemma: word,
+      contextSentence: contextSentence.slice(0, 1000) || undefined,
+      definitionZh: definitionZh.slice(0, 500) || undefined,
+      definitionEn: definitionEn.slice(0, 500) || undefined,
+      pos: pos.slice(0, 20) || undefined,
+      origin: 'post-review',
+      sourceDoc: `${article.value.article.title} #${article.value.article.id}`.slice(0, 120),
+    })
+  }
+  const judged = ledger.value.guesses.filter((g) => g.verdict)
+  const res = await vocabularyApi.batchAdd(items)
+  removeWords(words)
+  return {
+    added: res.added,
+    already: res.alreadyInDeck,
+    correctCount: judged.filter((g) => g.verdict === 'correct').length,
+    judgedCount: judged.length,
   }
 }
 
@@ -513,16 +615,6 @@ async function completeReading() {
   }
 }
 
-watch(ctxMenuVisible, (visible) => {
-  if (visible) {
-    document.addEventListener('pointerdown', onCtxDocPointerDown, true)
-    document.addEventListener('keydown', onCtxKeyDown)
-  } else {
-    document.removeEventListener('pointerdown', onCtxDocPointerDown, true)
-    document.removeEventListener('keydown', onCtxKeyDown)
-  }
-})
-
 onMounted(() => {
   timer = window.setInterval(() => {
     elapsedMinutes.value = Math.floor((Date.now() - startedAt.value) / 60000)
@@ -533,8 +625,6 @@ onMounted(() => {
 onUnmounted(() => {
   if (timer) window.clearInterval(timer)
   window.removeEventListener('scroll', onWindowScroll)
-  document.removeEventListener('pointerdown', onCtxDocPointerDown, true)
-  document.removeEventListener('keydown', onCtxKeyDown)
   flushProgress()
 })
 </script>
@@ -559,7 +649,7 @@ onUnmounted(() => {
         <div class="reader-head-main">
           <div class="reader-tags">
             <span class="source-tag" :class="sourceClass(article.article.sourceType)">
-              {{ typeLabel(article.article.sourceType) }}
+              {{ article.article.tagName }}
             </span>
             <span class="pill">{{ article.article.cefrLevel }}</span>
             <span class="pill">{{ article.article.wordCount }} words</span>
@@ -571,6 +661,16 @@ onUnmounted(() => {
           <p class="reader-summary">{{ article.article.summary }}</p>
         </div>
         <div class="reader-controls">
+          <button
+            type="button"
+            class="settle-entry"
+            title="处理本文的词汇欠账：验证猜过的词、回看查过的词、AI 扫描漏网词"
+            @click="settlementOpen = true"
+          >
+            <el-icon><PriceTag /></el-icon>
+            读后生词
+            <span v-if="pendingCount" class="settle-badge">{{ pendingCount }}</span>
+          </button>
           <span class="elapsed">{{ elapsedMinutes }} min</span>
           <el-button circle size="small" title="缩小字体" @click="decreaseFont">
             <el-icon><ZoomOut /></el-icon>
@@ -589,7 +689,6 @@ onUnmounted(() => {
             class="reading-prose"
             :style="{ fontSize: `${20 * fontScale}px` }"
             @mouseup="handleSelection"
-            @contextmenu="onArticleContextMenu"
             v-html="articleHtml"
           />
 
@@ -612,6 +711,16 @@ onUnmounted(() => {
         <!-- 外层页面容器的入场 transform 会把 fixed 包含块从视口改成祖先，入口按钮必须 Teleport 到 body。 -->
         <Teleport to="body">
           <div class="side-tabs side-tabs-left">
+            <button
+              type="button"
+              class="side-tab"
+              title="本篇预习（独立预习页）"
+              @click="goPreview"
+            >
+              <el-icon><MagicStick /></el-icon>
+              <span>预习</span>
+              <span v-if="hasSavedPreview" class="tab-count"><el-icon><Check /></el-icon></span>
+            </button>
             <button
               type="button"
               class="side-tab"
@@ -679,8 +788,12 @@ onUnmounted(() => {
             @explain="explainSelected"
             @add-word="addSelectedWord()"
           />
-          <ReadingComprehensionPanel
-            v-else-if="activeDrawer === 'questions'"
+          <template v-else-if="activeDrawer === 'questions'">
+            <ReadingQuizPanel :article-id="article.article.id" :section="currentQuizSection" />
+            <div v-if="questionCount" class="drawer-divider">
+              <span>本篇理解题 · {{ questionCount }} 道</span>
+            </div>
+            <ReadingComprehensionPanel
             :questions="article.questions"
             :answers="answers"
             :submitting="submitting"
@@ -690,13 +803,57 @@ onUnmounted(() => {
             :all-answered="allAnswered"
             @answer="setAnswer"
             @submit="completeReading"
-          />
+            />
+          </template>
         </ContentDrawer>
       </div>
+
+      <!-- 读后生词结算页：账本在父组件（localStorage），这里只传状态与动作回调。 -->
+      <VocabSettlementDialog
+        v-model="settlementOpen"
+        :article-title="article.article.title"
+        :ledger="ledger"
+        :pending-count="pendingCount"
+        :judging-word="judgingWord"
+        :scanning="scanning"
+        :scan-error="scanError"
+        :judge="runJudgeGuess"
+        :scan="runScanMissed"
+        :settle="runSettle"
+        :set-draft="setGuessDraft"
+        :remove="removeWords"
+      />
+
+      <!-- 进入文章前的预习询问：草稿确认后才按 (用户, 文章) 落库。 -->
+      <el-dialog v-model="previewAskOpen" width="min(430px, 92vw)" :close-on-click-modal="false">
+        <template #header>
+          <strong class="preview-ask-title">要不要先预习一下这篇？</strong>
+        </template>
+        <p class="preview-ask-intro">让 AI 通读全文，先给你一张路标：</p>
+        <ul class="preview-ask-list">
+          <li><strong>预习词表</strong>≤15 个核心词，给“它在本文中的意思”</li>
+          <li><strong>结构预告</strong>≤3 条高频句型，标出最可能栽跟头的句子</li>
+        </ul>
+        <p class="preview-ask-note">提取结果先在预习页给你过目，勾选确认后才会保存，下次进入自动带上。</p>
+        <template #footer>
+          <el-button @click="previewAskOpen = false">直接阅读</el-button>
+          <el-button type="primary" @click="goPreview">
+            <el-icon><MagicStick /></el-icon> 开始预习
+          </el-button>
+        </template>
+      </el-dialog>
 
       <div v-if="toolbarVisible" class="selection-toolbar" :style="toolbarStyle" @mousedown.prevent>
         <button v-if="isWordSelection" type="button" @click="lookupSelected()">
           <el-icon><Search /></el-icon> 查词
+        </button>
+        <button
+          v-if="isWordSelection"
+          type="button"
+          title="标记「我猜是这意思」，不打断阅读，读完再结算"
+          @click="markGuessFromSelection"
+        >
+          <el-icon><Aim /></el-icon> 猜
         </button>
         <button type="button" @click="explainSelected()">
           <el-icon><ChatDotRound /></el-icon> AI 解释
@@ -708,64 +865,6 @@ onUnmounted(() => {
           <el-icon><Close /></el-icon>
         </button>
       </div>
-
-      <Teleport to="body">
-        <div
-          v-if="ctxMenuVisible"
-          ref="ctxMenuEl"
-          class="ctx-menu"
-          :style="ctxMenuStyle"
-          @mousedown.prevent
-          @contextmenu.prevent
-        >
-          <template v-if="ctxMode === 'menu'">
-            <p class="ctx-quote">{{ ctxSource.length > 32 ? ctxSource.slice(0, 32) + '…' : ctxSource }}</p>
-            <button type="button" class="ctx-item" @click="ctxTranslate">
-              <span class="ctx-glyph">文A</span> 翻译选中内容
-            </button>
-            <button
-              type="button"
-              class="ctx-item"
-              :disabled="ctxMoreLoading"
-              @click="ctxExplain"
-            >
-              <el-icon v-if="ctxMoreLoading" class="is-loading"><Loading /></el-icon>
-              <el-icon v-else><ChatDotRound /></el-icon>
-              {{ ctxMoreLoading ? '正在解析…' : 'AI 详解' }}
-            </button>
-            <button v-if="ctxIsWord" type="button" class="ctx-item" @click="ctxLookup">
-              <el-icon><Search /></el-icon> 查词库
-            </button>
-            <button v-if="ctxIsWord" type="button" class="ctx-item" @click="ctxAddWord">
-              <el-icon><Plus /></el-icon> 加入生词本
-            </button>
-          </template>
-          <div v-else class="ctx-result">
-            <div class="ctx-result-head">
-              <span>译文</span>
-              <button type="button" class="ctx-close" title="关闭" @click="closeCtxMenu">
-                <el-icon><Close /></el-icon>
-              </button>
-            </div>
-            <p v-if="ctxLoading" class="ctx-loading">
-              <el-icon class="is-loading"><Loading /></el-icon> 正在翻译…
-            </p>
-            <p v-else-if="ctxError" class="ctx-err">{{ ctxError }}</p>
-            <p v-else class="ctx-translation">{{ ctxTranslation }}</p>
-            <button
-              v-if="!ctxLoading && !ctxError"
-              type="button"
-              class="ctx-more"
-              :disabled="ctxMoreLoading"
-              @click="ctxExplain"
-            >
-              <el-icon v-if="ctxMoreLoading" class="is-loading"><Loading /></el-icon>
-              <el-icon v-else><ChatDotRound /></el-icon>
-              {{ ctxMoreLoading ? '正在解析…' : '查看完整解析' }}
-            </button>
-          </div>
-        </div>
-      </Teleport>
 
       <button v-show="showBackTop" type="button" class="back-top" title="回到顶部" @click="backToTop">
         <el-icon><ArrowUp /></el-icon>
@@ -878,6 +977,54 @@ onUnmounted(() => {
   color: var(--faint);
   font-family: var(--font-mono);
   font-size: 11px;
+}
+
+/* 读后生词入口：顶栏胶囊按钮，琥珀色徽章计数，处理完自动归零。 */
+.settle-entry {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-right: 4px;
+  padding: 5px 11px;
+  border: 1px solid var(--line-strong);
+  border-radius: 999px;
+  background: var(--surface-2);
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 650;
+  cursor: pointer;
+  transition: color 0.15s ease, border-color 0.15s ease;
+}
+
+.settle-entry:hover {
+  border-color: var(--amber-line);
+  color: var(--amber-text);
+}
+
+.settle-badge {
+  display: grid;
+  place-items: center;
+  min-width: 17px;
+  height: 17px;
+  padding: 0 5px;
+  border-radius: 9px;
+  background: var(--amber);
+  color: #fff;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 700;
+}
+
+/* 正文内生词标注：猜=琥珀虚线，查=绿色实线；结算/忽略后随账本 watch 移除。 */
+.reader-main :deep(span.word-mark) {
+  border-bottom: 2px dashed var(--amber);
+  padding-bottom: 1px;
+  cursor: help;
+}
+
+.reader-main :deep(span.word-mark.mark-looked) {
+  border-bottom-style: solid;
+  border-bottom-color: var(--green-2);
 }
 
 .font-label {
@@ -1012,6 +1159,28 @@ onUnmounted(() => {
   left: auto;
 }
 
+/* AI 自测区与静态题区之间的分隔条。 */
+.drawer-divider {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 22px 0 14px;
+  color: var(--faint);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.drawer-divider::before,
+.drawer-divider::after {
+  content: "";
+  height: 1px;
+  background: var(--line);
+  flex: 1;
+}
+
 /* 抽屉头部的小徽标：AI provider 或答题进度。 */
 .drawer-badge {
   padding: 3px 7px;
@@ -1036,7 +1205,7 @@ onUnmounted(() => {
   border-radius: 9px;
   background: #1b2e23;
   box-shadow: 0 12px 30px rgb(20 36 27 / 28%);
-  animation: rise-in 0.16s ease both;
+  animation: rise-in 0.16s ease backwards;
 }
 
 .selection-toolbar button {
@@ -1060,148 +1229,6 @@ onUnmounted(() => {
 .selection-toolbar button.close {
   padding-inline: 6px;
   color: rgb(233 242 236 / 50%);
-}
-
-/* Right-click translation menu — same dark floating surface as the selection toolbar. */
-.ctx-menu {
-  position: fixed;
-  z-index: 110;
-  min-width: 178px;
-  max-width: min(300px, calc(100vw - 20px));
-  padding: 5px;
-  border: 1px solid rgb(255 255 255 / 10%);
-  border-radius: 10px;
-  background: #1b2e23;
-  box-shadow: 0 14px 34px rgb(10 20 14 / 34%);
-  animation: rise-in 0.14s ease both;
-}
-
-.ctx-quote {
-  margin: 2px 6px 5px;
-  padding-bottom: 5px;
-  border-bottom: 1px solid rgb(255 255 255 / 10%);
-  overflow: hidden;
-  color: rgb(233 242 236 / 55%);
-  font-family: var(--font-reading);
-  font-size: 11.5px;
-  font-style: italic;
-  line-height: 1.45;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.ctx-item {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  width: 100%;
-  padding: 7px 9px;
-  border: 0;
-  border-radius: 7px;
-  background: transparent;
-  color: #e9f2ec;
-  font-size: 12.5px;
-  text-align: left;
-  white-space: nowrap;
-  cursor: pointer;
-}
-
-.ctx-item:hover {
-  background: rgb(255 255 255 / 10%);
-}
-
-.ctx-item:disabled,
-.ctx-more:disabled {
-  color: rgb(233 242 236 / 55%);
-  cursor: default;
-}
-
-.ctx-glyph {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 15px;
-  color: rgb(233 242 236 / 80%);
-  font-family: var(--font-mono);
-  font-size: 10px;
-  font-weight: 800;
-}
-
-.ctx-result {
-  padding: 8px 10px 7px;
-}
-
-.ctx-result-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  color: rgb(233 242 236 / 55%);
-  font-size: 10px;
-  font-weight: 800;
-  letter-spacing: 0.14em;
-}
-
-.ctx-close {
-  display: grid;
-  place-items: center;
-  padding: 2px;
-  border: 0;
-  border-radius: 5px;
-  background: transparent;
-  color: rgb(233 242 236 / 50%);
-  cursor: pointer;
-}
-
-.ctx-close:hover {
-  background: rgb(255 255 255 / 10%);
-  color: #e9f2ec;
-}
-
-.ctx-translation {
-  margin-top: 5px;
-  max-height: 42vh;
-  overflow-y: auto;
-  color: #e9f2ec;
-  font-family: var(--font-reading);
-  font-size: 14px;
-  line-height: 1.65;
-}
-
-.ctx-loading {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  margin-top: 7px;
-  color: rgb(233 242 236 / 65%);
-  font-size: 12px;
-}
-
-.ctx-err {
-  margin-top: 6px;
-  color: #f0a8a8;
-  font-size: 12px;
-  line-height: 1.6;
-}
-
-.ctx-more {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  width: 100%;
-  margin-top: 7px;
-  padding: 6px 8px;
-  border: 0;
-  border-top: 1px solid rgb(255 255 255 / 10%);
-  border-radius: 0 0 6px 6px;
-  background: transparent;
-  color: rgb(233 242 236 / 75%);
-  font-size: 12px;
-  cursor: pointer;
-}
-
-.ctx-more:hover {
-  background: rgb(255 255 255 / 8%);
-  color: #e9f2ec;
 }
 
 .back-top {
@@ -1272,5 +1299,43 @@ onUnmounted(() => {
     padding: 12px 8px;
     font-size: 11px;
   }
+}
+
+.preview-ask-title {
+  font-size: 16px;
+}
+
+.preview-ask-intro {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.preview-ask-list {
+  display: grid;
+  gap: 8px;
+  margin: 12px 0;
+  padding: 0;
+  list-style: none;
+}
+
+.preview-ask-list li {
+  padding: 9px 11px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--surface-2);
+  color: var(--muted);
+  font-size: 12.5px;
+  line-height: 1.6;
+}
+
+.preview-ask-list li strong {
+  margin-right: 7px;
+  color: var(--ink);
+}
+
+.preview-ask-note {
+  color: var(--faint);
+  font-size: 12px;
+  line-height: 1.6;
 }
 </style>

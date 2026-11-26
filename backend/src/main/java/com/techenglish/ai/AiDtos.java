@@ -47,4 +47,37 @@ public final class AiDtos {
 
     public record AiStatusResponse(String provider, boolean configured, String model) {
     }
+
+    // ---- Post-reading vocabulary settlement ------------------------------
+
+    /** One "I guessed this meaning" check from reading: word + learner's guess + article sentence. */
+    public record JudgeGuessRequest(
+            @NotBlank @Size(max = 64) String word,
+            @NotBlank @Size(max = 2000) String guess,
+            @Size(max = 4000) String context
+    ) {
+    }
+
+    /** Mirror of prompts/vocab-judge/v1-system.md JSON shape. */
+    public record JudgeGuessPayload(String verdict, String meaning, String reason) {
+    }
+
+    /** verdict is normalised to correct | partial | wrong before it reaches the client. */
+    public record JudgeGuessResponse(String provider, String model, String verdict, String meaning, String reason) {
+    }
+
+    public record MissedWord(
+            @NotBlank @Size(max = 64) String word,
+            @Size(max = 500) String meaning,
+            @Size(max = 500) String reason,
+            @Size(max = 500) String sentence
+    ) {
+    }
+
+    /** Mirror of prompts/vocab-scan/v1-system.md JSON shape. */
+    public record VocabScanPayload(List<MissedWord> words) {
+    }
+
+    public record VocabScanResponse(String provider, String model, List<MissedWord> words) {
+    }
 }

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import dayjs from 'dayjs'
 import 'dayjs/locale/zh-cn'
@@ -13,6 +13,27 @@ dayjs.locale('zh-cn')
 const route = useRoute()
 const auth = useAuthStore()
 const mobileOpen = ref(false)
+const topbarEl = ref<HTMLElement | null>(null)
+
+// 固定抽屉（ContentDrawer）锚定在顶栏下缘。顶栏真实高度会随内容/断点变化，
+// min-height 只是下限，所以挂载与窗口尺寸变化时把测量值写进 --topbar-height。
+// ResizeObserver 为主，window resize 兜底：部分嵌入式 webview 中 RO 不随视口缩放触发。
+function syncTopbarHeight() {
+  const el = topbarEl.value
+  if (el) document.documentElement.style.setProperty('--topbar-height', `${el.getBoundingClientRect().height}px`)
+}
+let topbarObserver: ResizeObserver | null = null
+onMounted(() => {
+  syncTopbarHeight()
+  topbarObserver = new ResizeObserver(syncTopbarHeight)
+  const el = topbarEl.value
+  if (el) topbarObserver.observe(el)
+  window.addEventListener('resize', syncTopbarHeight)
+})
+onBeforeUnmount(() => {
+  topbarObserver?.disconnect()
+  window.removeEventListener('resize', syncTopbarHeight)
+})
 
 const pageTitle = computed(() => (route.meta.title as string | undefined) ?? '今日学习')
 const today = computed(() => dayjs().format('MM月DD日 dddd'))
@@ -38,7 +59,7 @@ const target = computed(() =>
     </el-drawer>
 
     <div class="main">
-      <header class="topbar">
+      <header ref="topbarEl" class="topbar">
         <div class="topbar-left">
           <button class="menu-button" type="button" @click="mobileOpen = true">
             <el-icon><Menu /></el-icon>

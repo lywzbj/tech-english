@@ -10,7 +10,12 @@ declare module 'vue-router' {
 
 const router = createRouter({
   history: createWebHistory(),
-  scrollBehavior: () => ({ top: 0 }),
+  scrollBehavior: (to, from, savedPosition) => {
+    if (savedPosition) return savedPosition
+    // Query-only updates (e.g. the reading tag filter) must not jump to the top.
+    if (to.path === from.path) return false
+    return { top: 0 }
+  },
   routes: [
     {
       path: '/setup',
@@ -75,6 +80,19 @@ const router = createRouter({
           name: 'reading',
           component: () => import('@/views/ReadingListView.vue'),
           meta: { title: '阅读实验室' },
+        },
+        {
+          // Static segment; vue-router prefers it over the dynamic 'reading/:id' below.
+          path: 'reading/tags',
+          name: 'reading-tags',
+          component: () => import('@/views/TagManageView.vue'),
+          meta: { title: '标签管理' },
+        },
+        {
+          path: 'reading/:id/preview',
+          name: 'reading-preview',
+          component: () => import('@/views/ReadingPreviewView.vue'),
+          meta: { title: '阅读预习' },
         },
         {
           path: 'reading/:id',

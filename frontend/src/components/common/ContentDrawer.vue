@@ -74,6 +74,16 @@ const emit = defineEmits<{
 }
 
 /*
+ * Element Plus 给 ltr/rtl 抽屉设了 top:0 + height:100%，会盖住应用的 sticky 顶栏。
+ * 抽屉属于页面内容区：把它锚定到顶栏下缘，滑出时不再遮挡 header。
+ */
+:global(.content-drawer.el-drawer.ltr),
+:global(.content-drawer.el-drawer.rtl) {
+  top: var(--topbar-height, 0px);
+  height: calc(100% - var(--topbar-height, 0px));
+}
+
+/*
  * Element Plus wraps every drawer in a fixed, full-viewport div even when
  * `modal` is false. Let that wrapper pass pointer events through so the reader
  * can keep selecting text and scrolling behind the drawer; the drawer itself

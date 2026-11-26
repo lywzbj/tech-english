@@ -10,6 +10,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
@@ -116,9 +117,50 @@ public class VocabularyService {
             item.setContextSentence(request.contextSentence().trim());
         }
         item = userVocabRepository.save(item);
-        learningEventService.record(userId, "VOCAB_ADDED", "VOCAB", entry.getId(),
-                Map.of("lemma", entry.getLemma()));
+        String origin = request.origin() == null || request.origin().isBlank()
+                ? "reading" : request.origin().trim();
+        Map<String, Object> payload = new HashMap<>();
+        payload.put("lemma", entry.getLemma());
+        payload.put("origin", origin);
+        if (request.sourceDoc() != null && !request.sourceDoc().isBlank()) {
+            payload.put("sourceDoc", request.sourceDoc().trim());
+        }
+        learningEventService.record(userId, "VOCAB_ADDED", "VOCAB", entry.getId(), payload);
         return toCard(item, entry);
+    }
+
+    /**
+     * Post-reading settlement import: add many words in one transaction. Items that
+     * are already in the deck are merged silently (alreadyInDeck=true) so the sheet
+     * can tick everything and the server decides what counts as new.
+     */
+    @Transactional
+    public VocabularyDtos.BatchAddResponse batchAdd(Long userId, VocabularyDtos.BatchAddRequest request) {
+        List<VocabularyDtos.AddVocabRequest> items =
+                request.items() == null ? List.of() : request.items();
+        List<VocabularyDtos.BatchItemResult> results = new ArrayList<>();
+        int added = 0;
+        int already = 0;
+        for (VocabularyDtos.AddVocabRequest item : items) {
+            boolean preExisting = inDeck(userId, item.lemma());
+            VocabularyDtos.VocabCard card = add(userId, item);
+            if (preExisting) {
+                already++;
+            } else {
+                added++;
+            }
+            results.add(new VocabularyDtos.BatchItemResult(
+                    card.lemma(), card.userVocabId(), card.vocabId(), preExisting,
+                    card.status(), card.intervalDays()));
+        }
+        return new VocabularyDtos.BatchAddResponse(items.size(), added, already, results);
+    }
+
+    @Transactional(readOnly = true)
+    public boolean inDeck(Long userId, String lemma) {
+        return entryRepository.findByLemmaIgnoreCase(lemma.trim())
+                .flatMap(entry -> userVocabRepository.findByUserIdAndVocabId(userId, entry.getId()))
+                .isPresent();
     }
 
     @Transactional(readOnly = true)
@@ -168,7 +210,8 @@ public class VocabularyService {
         entry.setDefinitionZh(trimToEmpty(request.definitionZh()));
         entry.setCategory("GENERAL");
         entry.setDomain("READING");
-        entry.setSource("READING");
+        entry.setSource(request.origin() == null || request.origin().isBlank()
+                ? "READING" : request.origin().trim());
         return entryRepository.save(entry);
     }
 

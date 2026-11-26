@@ -5,6 +5,9 @@ import lombok.Setter;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.stereotype.Component;
 
+import java.util.LinkedHashMap;
+import java.util.Map;
+
 @Getter
 @Setter
 @Component
@@ -26,6 +29,23 @@ public class AiProperties {
     private String model = "deepseek-flash";
     private int maxOutputTokens = 3000;
     private int timeoutSeconds = 45;
+
+    /**
+     * Active prompt version per purpose. PromptRegistry loads
+     * {@code prompts/<purpose>/<version>-system.md} and
+     * {@code prompts/<purpose>/<version>-user.md} from the classpath at startup;
+     * a missing or blank file fails application startup (fail-fast).
+     */
+    private Map<String, String> prompts = new LinkedHashMap<>(Map.ofEntries(
+            Map.entry("explain", "v2"),           // 阅读讲解
+            Map.entry("grammar-explain", "v1"),   // 语法知识解读
+            Map.entry("writing-review", "v1"),    // 写作批改
+            Map.entry("question-gen", "v2"),      // 阅读理解 AI 自测出题（小节级单选）
+            Map.entry("exercise-gen", "v1"),      // 语法练习出题(由浅入深)
+            Map.entry("ability-assess", "v1"),    // 能力评估与学习建议
+            Map.entry("preview", "v1"),          // 阅读预习(核心词+结构预告)
+            Map.entry("vocab-judge", "v1"),      // 读后结算:猜词判定
+            Map.entry("vocab-scan", "v1")));      // 读后结算:漏网高价值词扫描
 
     public boolean remote() {
         return !PROVIDER_MOCK.equalsIgnoreCase(provider);

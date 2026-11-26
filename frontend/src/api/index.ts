@@ -9,10 +9,19 @@ import type {
   GrammarLesson,
   GrammarPath,
   MeResponse,
+  PreviewContent,
+  PreviewGenerateResponse,
+  PreviewGrammar,
+  PreviewStateResponse,
+  PreviewWord,
   ProfileUpdateRequest,
+  QuizGenerateResponse,
+  QuizListResponse,
+  QuizSubmitResponse,
   ReadingArticleDetail,
   ReadingCompleteResponse,
   ReadingListResponse,
+  ReadingTag,
   ReviewResponse,
   SearchResponse,
   SetupStatus,
@@ -20,8 +29,12 @@ import type {
   TodayPlan,
   VectorStatus,
   VocabCard,
+  VocabJudgeResponse,
   VocabLookup,
+  VocabScanResponse,
   VocabularyAddRequest,
+  VocabularyBatchItem,
+  VocabularyBatchResponse,
   VocabularyListResponse,
   WeekPlan,
 } from '@/types/api'
@@ -61,6 +74,10 @@ export const vocabularyApi = {
       .then((r) => r.data),
   lookup: (word: string) =>
     http.get<VocabLookup>('/vocabulary/lookup', { params: { word } }).then((r) => r.data),
+  batchAdd: (items: VocabularyBatchItem[]) =>
+    http
+      .post<VocabularyBatchResponse>('/vocabulary/batch', { items })
+      .then((r) => r.data),
 }
 
 export const readingApi = {
@@ -76,8 +93,9 @@ export const readingApi = {
     contentMd: string
     sourceUrl?: string
     sourceType?: string
+    tagId?: number | null
   }) => http.post<ReadingArticleDetail>('/reading/import', body).then((r) => r.data),
-  importUrl: (body: { url: string; title?: string }) =>
+  importUrl: (body: { url: string; title?: string; tagId?: number | null }) =>
     http.post<ReadingArticleDetail>('/reading/import-url', body).then((r) => r.data),
   complete: (id: number, body: { minutes: number; answers: { questionId: number; answer: string }[] }) =>
     http
@@ -85,6 +103,40 @@ export const readingApi = {
       .then((r) => r.data),
   saveProgress: (id: number, scrollPercent: number) =>
     http.post(`/reading/articles/${id}/progress`, { scrollPercent }),
+  vocabScan: (id: number, knownWords: string[]) =>
+    http
+      .post<VocabScanResponse>(`/reading/articles/${id}/vocab-scan`, { knownWords })
+      .then((r) => r.data),
+  previewState: (id: number) =>
+    http.get<PreviewStateResponse>(`/reading/articles/${id}/preview`).then((r) => r.data),
+  previewGenerate: (id: number) =>
+    http.post<PreviewGenerateResponse>(`/reading/articles/${id}/preview/generate`).then((r) => r.data),
+  previewSave: (
+    id: number,
+    body: {
+      words: PreviewWord[]
+      grammar: PreviewGrammar[]
+      promptVersion?: string
+      provider?: string
+      model?: string
+    },
+  ) => http.put<PreviewContent>(`/reading/articles/${id}/preview`, body).then((r) => r.data),
+  quizGenerate: (
+    id: number,
+    body: { difficulty: string; sectionTitle?: string; sectionText?: string },
+  ) =>
+    http.post<QuizGenerateResponse>(`/reading/articles/${id}/quiz/generate`, body).then((r) => r.data),
+  quizList: (id: number) =>
+    http.get<QuizListResponse>(`/reading/articles/${id}/quiz`).then((r) => r.data),
+  quizSubmit: (setId: number, body: { answers: { questionId: number; answer: string }[] }) =>
+    http.post<QuizSubmitResponse>(`/reading/quiz/sets/${setId}/submit`, body).then((r) => r.data),
+  tags: () => http.get<ReadingTag[]>('/reading/tags').then((r) => r.data),
+  createTag: (body: { name: string; sortOrder?: number }) =>
+    http.post<ReadingTag>('/reading/tags', body).then((r) => r.data),
+  updateTag: (id: number, body: { name: string; sortOrder?: number }) =>
+    http.put<ReadingTag>(`/reading/tags/${id}`, body).then((r) => r.data),
+  setTagStatus: (id: number, enabled: boolean) =>
+    http.put<ReadingTag>(`/reading/tags/${id}/status`, { enabled }).then((r) => r.data),
 }
 
 export const planApi = {
@@ -102,6 +154,8 @@ export const aiApi = {
   status: () => http.get<AiStatus>('/ai/status').then((r) => r.data),
   explain: (body: { text: string; context?: string; mode?: string }) =>
     http.post<AiExplainResponse>('/ai/explain', body).then((r) => r.data),
+  judgeGuess: (body: { word: string; guess: string; context?: string }) =>
+    http.post<VocabJudgeResponse>('/ai/judge-guess', body).then((r) => r.data),
 }
 
 export const searchApi = {

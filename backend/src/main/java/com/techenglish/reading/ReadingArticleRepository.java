@@ -8,4 +8,6 @@ public interface ReadingArticleRepository extends JpaRepository<ReadingArticle, 
     List<ReadingArticle> findAllByOrderBySourceTypeAscIdAsc();
 
     List<ReadingArticle> findBySourceTypeOrderByIdAsc(ReadingSourceType sourceType);
+
+    long countByTagId(Long tagId);
 }

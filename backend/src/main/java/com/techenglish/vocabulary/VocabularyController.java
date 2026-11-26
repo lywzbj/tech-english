@@ -36,6 +36,13 @@ public class VocabularyController {
         return vocabularyService.add(user.id(), request);
     }
 
+    /** Post-reading settlement batch import; already-decked words merge silently. */
+    @PostMapping("/batch")
+    public VocabularyDtos.BatchAddResponse addBatch(@AuthenticationPrincipal AuthUser user,
+                                                    @Valid @RequestBody VocabularyDtos.BatchAddRequest request) {
+        return vocabularyService.batchAdd(user.id(), request);
+    }
+
     @PostMapping("/{userVocabId}/review")
     public VocabularyDtos.ReviewResponse review(@AuthenticationPrincipal AuthUser user,
                                                 @PathVariable Long userVocabId,

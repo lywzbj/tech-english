@@ -27,4 +27,11 @@ public class AiController {
                                           @Valid @RequestBody AiDtos.ExplainRequest request) {
         return aiGateway.explain(user.id(), request);
     }
+
+    /** Post-reading settlement: judge one guessed word against the article sentence. */
+    @PostMapping("/judge-guess")
+    public AiDtos.JudgeGuessResponse judgeGuess(@AuthenticationPrincipal AuthUser user,
+                                                @Valid @RequestBody AiDtos.JudgeGuessRequest request) {
+        return aiGateway.judgeGuess(user.id(), request);
+    }
 }

@@ -203,7 +203,7 @@ h1 {
   border-radius: 26px;
   background: var(--surface);
   box-shadow: var(--shadow-md);
-  animation: rise-in 0.55s ease both;
+  animation: rise-in 0.55s ease backwards;
 }
 
 .form-card h2 {

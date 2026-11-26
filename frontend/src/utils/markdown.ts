@@ -76,24 +76,74 @@ export interface TocItem {
   level: number
 }
 
-export function extractToc(source: string): TocItem[] {
+/** 标题行 → DOM 锚点 id（markdown-it-anchor 用同一规则）。 */
+function headingId(text: string): string {
+  return `h-${text
+    .toLowerCase()
+    .replace(/[^\w\u4e00-\u9fa5]+/g, '-')
+    .replace(/^-+|-+$/g, '')}`
+}
+
+interface HeadingLine {
+  index: number
+  id: string
+  text: string
+  level: number
+}
+
+/** 扫描正文里的 2-5 级标题（跳过代码块），toc 与小节切分共用。 */
+function scanHeadings(source: string): HeadingLine[] {
   const lines = (source || '').split('\n')
-  const result: TocItem[] = []
+  const headings: HeadingLine[] = []
   let inCode = false
-  for (const line of lines) {
-    if (line.trim().startsWith('```')) {
+  for (let i = 0; i < lines.length; i++) {
+    if (lines[i].trim().startsWith('```')) {
       inCode = !inCode
       continue
     }
     if (inCode) continue
-    const match = /^(#{2,5})\s+(.+)$/.exec(line.trim())
+    const match = /^(#{2,5})\s+(.+)$/.exec(lines[i].trim())
     if (!match) continue
     const text = match[2].replace(/[*_`]/g, '').trim()
-    const id = `h-${text
-      .toLowerCase()
-      .replace(/[^\w\u4e00-\u9fa5]+/g, '-')
-      .replace(/^-+|-+$/g, '')}`
-    result.push({ id, text, level: match[1].length })
+    headings.push({ index: i, id: headingId(text), text, level: match[1].length })
   }
-  return result
+  return headings
+}
+
+export function extractToc(source: string): TocItem[] {
+  return scanHeadings(source).map(({ id, text, level }) => ({ id, text, level }))
+}
+
+export interface SectionRange {
+  id: string
+  text: string
+  level: number
+  /** 标题行（含）到下一个同级/更高级标题行（不含）之间的 contentMd 行区间。 */
+  startLine: number
+  endLine: number
+}
+
+/**
+ * 按标题把 contentMd 切成小节：AI 自测出题时用「当前小节」的原文作为上下文。
+ * 每节从标题行开始，到下一个同级或更高级标题前结束。
+ */
+export function extractSections(source: string): SectionRange[] {
+  const lines = (source || '').split('\n')
+  const headings = scanHeadings(source)
+  return headings.map((heading, i) => {
+    let endLine = lines.length
+    for (let j = i + 1; j < headings.length; j++) {
+      if (headings[j].level <= heading.level) {
+        endLine = headings[j].index
+        break
+      }
+    }
+    return {
+      id: heading.id,
+      text: heading.text,
+      level: heading.level,
+      startLine: heading.index,
+      endLine,
+    }
+  })
 }
