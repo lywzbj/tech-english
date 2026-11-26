@@ -78,31 +78,77 @@ export interface GrammarExercise {
   type: string
   prompt: string
   options: string[]
+  skill?: 'recognize' | 'form' | 'use' | null
+  level?: number | null
+  source: 'SEED' | 'AI'
+}
+
+export interface GrammarPool {
+  practiceCount: number
+  bossCount: number
+  bossSource: 'AI' | 'SEED'
+  aiConfigured: boolean
+  generationNeeded: boolean
+}
+
+export interface GrammarWrongAnswer {
+  exerciseId: string
+  prompt: string
+  yourAnswer: string
+  correctAnswer: string
+}
+
+export interface GrammarHistory {
+  attempts: number
+  correct: number
+  lastPracticedAt?: string | null
+  bossScore?: number | null
+  recentWrong: GrammarWrongAnswer[]
 }
 
 export interface GrammarLesson {
   topic: GrammarTopic
   contentMd: string
   examples: GrammarExample[]
-  exercises: GrammarExercise[]
+  practice: GrammarExercise[]
+  boss: GrammarExercise[]
+  pool: GrammarPool
+  history: GrammarHistory
 }
 
 export interface AttemptResult {
   exerciseId: string
+  prompt: string
   correct: boolean
+  yourAnswer: string
   correctAnswer: string
   explanation: string
+  optionNotes: Record<string, string>
 }
 
 export interface AttemptsResponse {
+  mode: 'PRACTICE' | 'BOSS'
   total: number
   correct: number
   score: number
   mastery: number
+  bossScore: number
+  requiredScore: number
+  passed: boolean
   status: string
   unlockedNext: boolean
   nextSlug: string | null
   results: AttemptResult[]
+}
+
+export interface GrammarGenerateResponse {
+  provider: string
+  model: string
+  promptVersion: string
+  practiceAdded: number
+  bossAdded: number
+  practiceReady: boolean
+  bossReady: boolean
 }
 
 export interface VocabCard {

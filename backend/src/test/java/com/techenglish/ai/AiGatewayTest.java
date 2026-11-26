@@ -122,7 +122,8 @@ class AiGatewayTest {
     }
 
     private AiGateway gateway(AiProperties properties, ChatModel model, AiCallLogRepository repository) {
-        return new AiGateway(properties, ChatClient.builder(model).build(), objectMapper, repository);
+        return new AiGateway(properties, ChatClient.builder(model).build(), new PromptRegistry(properties),
+                objectMapper, repository);
     }
 
     private static AiDtos.ExplainRequest request() {

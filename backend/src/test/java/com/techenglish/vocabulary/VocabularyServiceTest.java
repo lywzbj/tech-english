@@ -42,7 +42,7 @@ class VocabularyServiceTest {
 
         VocabularyDtos.VocabCard card = service.add(1L, new VocabularyDtos.AddVocabRequest(
                 "idempotency", "An operation is idempotent if calling it twice has the same effect.",
-                "幂等性", "", null));
+                "幂等性", "", null, null, null));
 
         assertThat(card.userVocabId()).isEqualTo(7L);
         assertThat(card.vocabId()).isEqualTo(99L);
@@ -57,7 +57,7 @@ class VocabularyServiceTest {
         assertThat(saved.getValue().getDomain()).isEqualTo("READING");
         assertThat(saved.getValue().getCategory()).isEqualTo("GENERAL");
         verify(learningEventService).record(eq(1L), eq("VOCAB_ADDED"), eq("VOCAB"), eq(99L),
-                eq(Map.of("lemma", "idempotency")));
+                eq(Map.of("lemma", "idempotency", "origin", "reading")));
     }
 
     @Test
@@ -76,7 +76,7 @@ class VocabularyServiceTest {
         });
 
         VocabularyDtos.VocabCard card = service.add(1L, new VocabularyDtos.AddVocabRequest(
-                "request", null, "客户端发来的请求", "", "n."));
+                "request", null, "客户端发来的请求", "", "n.", null, null));
 
         assertThat(card.definitionZh()).isEqualTo("请求");
         assertThat(card.definitionEn()).isEqualTo("A message sent to a server.");

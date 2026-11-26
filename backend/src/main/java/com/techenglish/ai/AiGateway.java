@@ -26,6 +26,7 @@ public class AiGateway {
     private static final String PURPOSE_EXPLAIN = "explain";
     private static final String PURPOSE_PREVIEW = "preview";
     private static final String PURPOSE_QUESTION_GEN = "question-gen";
+    private static final String PURPOSE_EXERCISE_GEN = "exercise-gen";
     private static final double TEMPERATURE = 0.2;
     private static final Logger log = LoggerFactory.getLogger(AiGateway.class);
 
@@ -37,6 +38,7 @@ public class AiGateway {
     private final StructuredOutputConverter<AiDtos.JudgeGuessPayload> judgeConverter;
     private final StructuredOutputConverter<AiDtos.VocabScanPayload> scanConverter;
     private final StructuredOutputConverter<QuizDtos.QuestionGenPayload> questionGenConverter;
+    private final StructuredOutputConverter<GrammarGenDtos.ExerciseGenPayload> exerciseGenConverter;
     private final AiCallLogRepository aiCallLogRepository;
 
     public AiGateway(AiProperties properties, ChatClient aiChatClient, PromptRegistry promptRegistry,
@@ -54,6 +56,8 @@ public class AiGateway {
                 new BeanOutputConverter<>(AiDtos.VocabScanPayload.class, objectMapper));
         this.questionGenConverter = new TolerantConverter<>(
                 new BeanOutputConverter<>(QuizDtos.QuestionGenPayload.class, objectMapper));
+        this.exerciseGenConverter = new TolerantConverter<>(
+                new BeanOutputConverter<>(GrammarGenDtos.ExerciseGenPayload.class, objectMapper));
         this.aiCallLogRepository = aiCallLogRepository;
     }
 
@@ -238,6 +242,20 @@ public class AiGateway {
         return new QuizDtos.QuestionGenResponse(providerName(), properties.getModel(),
                 promptRegistry.versionLabel(PURPOSE_QUESTION_GEN),
                 payload.questions() == null ? List.of() : payload.questions());
+    }
+
+    /**
+     * Generates a mixed practice + boss pool for one grammar topic. Like the
+     * reading quiz generator, a half-parsed payload is a hard error: the grammar
+     * service validates every item (4 options, answer matches an option, notes
+     * aligned) before persisting anything.
+     */
+    public GrammarGenDtos.ExerciseGenResponse generateGrammarExercises(Long userId, Map<String, String> vars) {
+        GrammarGenDtos.ExerciseGenPayload payload = callStructured(PURPOSE_EXERCISE_GEN, userId, vars,
+                exerciseGenConverter, "AI 语法出题失败，请重试");
+        return new GrammarGenDtos.ExerciseGenResponse(providerName(), properties.getModel(),
+                promptRegistry.versionLabel(PURPOSE_EXERCISE_GEN),
+                payload.exercises() == null ? List.of() : payload.exercises());
     }
 
     /**

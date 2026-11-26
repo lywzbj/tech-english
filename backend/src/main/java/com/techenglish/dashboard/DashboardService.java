@@ -1,6 +1,6 @@
 package com.techenglish.dashboard;
 
-import com.techenglish.grammar.GrammarProgressRepository;
+import com.techenglish.grammar.GrammarService;
 import com.techenglish.identity.AppUser;
 import com.techenglish.identity.AppUserRepository;
 import com.techenglish.identity.LearnerProfile;
@@ -34,7 +34,7 @@ public class DashboardService {
 
     private final AppUserRepository userRepository;
     private final LearnerProfileRepository profileRepository;
-    private final GrammarProgressRepository grammarProgressRepository;
+    private final GrammarService grammarService;
     private final UserVocabRepository userVocabRepository;
     private final ReadingArticleRepository articleRepository;
     private final ReadingSessionRepository readingSessionRepository;
@@ -56,8 +56,7 @@ public class DashboardService {
                 .map(ReadingSession::getArticleId)
                 .collect(Collectors.toCollection(HashSet::new));
         long totalArticles = articleRepository.count();
-        BigDecimal grammarMastery = grammarProgressRepository.averageMastery(userId);
-        double grammarValue = grammarMastery == null ? 0 : grammarMastery.doubleValue();
+        double grammarValue = grammarService.overallMastery(userId);
         double vocabValue = totalVocab == 0 ? 0 : masteredVocab * 100.0 / totalVocab;
         double readingValue = totalArticles == 0 ? 0 : readArticleIds.size() * 100.0 / totalArticles;
         long tasksCompleted = todayPlan.tasks().stream()
@@ -72,7 +71,7 @@ public class DashboardService {
                 ? 0 : Math.max(0, ChronoUnit.DAYS.between(today, profile.getExamDate()));
         List<DashboardDtos.SkillDto> skills = List.of(
                 new DashboardDtos.SkillDto("grammar", "语法", round(grammarValue),
-                        grammarValue >= 70 ? "基础节点已掌握" : "先把句子主干练稳"),
+                        grammarValue >= 70 ? "路径掌握度良好" : "先把句子主干练稳"),
                 new DashboardDtos.SkillDto("vocabulary", "词汇", round(vocabValue),
                         "已掌握 " + masteredVocab + " / " + totalVocab + " 个"),
                 new DashboardDtos.SkillDto("reading", "阅读", round(readingValue),

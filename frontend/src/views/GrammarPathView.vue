@@ -31,7 +31,7 @@ function statusLabel(topic: GrammarTopic) {
 
 function openTopic(topic: GrammarTopic) {
   if (topic.locked) {
-    ElMessage.info('先完成前置节点，掌握度达到 70 后解锁')
+    ElMessage.info('先通过前置节点的 Boss（80 分）后解锁')
     return
   }
   router.push(`/grammar/${topic.slug}`)
@@ -59,7 +59,7 @@ onMounted(load)
         <p class="eyebrow">GRAMMAR PATH</p>
         <h1 class="page-title">把语法拆成可以通关的节点</h1>
         <p class="page-subtitle">
-          每个节点只讲一个规则，配技术场景例句和一组练习。掌握度达到 70、Boss 达到 80，才会解锁下一关。
+          每个节点一个规则，配技术场景例句、一组练习和一次 Boss 挑战。Boss 达到 80 分即掌握，并解锁下一关。
         </p>
       </div>
       <div v-if="path" class="path-progress">

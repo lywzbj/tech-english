@@ -35,4 +35,11 @@ public class GrammarController {
                                                @Valid @RequestBody GrammarDtos.AttemptsRequest request) {
         return grammarService.submit(user.id(), slug, request);
     }
+
+    /** Lazily generates and caches extra practice + boss questions for one topic. */
+    @PostMapping("/topics/{slug}/generate")
+    public GrammarDtos.GenerateResponse generate(@AuthenticationPrincipal AuthUser user,
+                                                 @PathVariable String slug) {
+        return grammarService.generateExercises(user.id(), slug);
+    }
 }

@@ -8,6 +8,7 @@ import type {
   DueVocabResponse,
   GrammarLesson,
   GrammarPath,
+  GrammarGenerateResponse,
   MeResponse,
   PreviewContent,
   PreviewGenerateResponse,
@@ -56,9 +57,15 @@ export const grammarApi = {
   path: () => http.get<GrammarPath>('/grammar/path').then((r) => r.data),
   lesson: (slug: string) =>
     http.get<GrammarLesson>(`/grammar/topics/${encodeURIComponent(slug)}`).then((r) => r.data),
-  submit: (slug: string, answers: { exerciseId: string; answer: string }[]) =>
+  generate: (slug: string) =>
     http
-      .post<AttemptsResponse>(`/grammar/topics/${encodeURIComponent(slug)}/attempts`, { answers })
+      .post<GrammarGenerateResponse>(`/grammar/topics/${encodeURIComponent(slug)}/generate`, null, {
+        timeout: 120_000,
+      })
+      .then((r) => r.data),
+  submit: (slug: string, mode: 'PRACTICE' | 'BOSS', answers: { exerciseId: string; answer: string }[]) =>
+    http
+      .post<AttemptsResponse>(`/grammar/topics/${encodeURIComponent(slug)}/attempts`, { mode, answers })
       .then((r) => r.data),
 }
 

@@ -106,7 +106,8 @@ class AiClientConfigurationTest {
         ObjectProvider<ObservationRegistry> observationRegistry = beanFactory.getBeanProvider(ObservationRegistry.class);
         ChatModel model = configuration.aiChatModel(properties, objectMapper, observationRegistry);
         AiCallLogRepository repository = mock(AiCallLogRepository.class);
-        AiGateway gateway = new AiGateway(properties, ChatClient.builder(model).build(), objectMapper, repository);
+        AiGateway gateway = new AiGateway(properties, ChatClient.builder(model).build(),
+                new PromptRegistry(properties), objectMapper, repository);
 
         AiDtos.ExplainResponse response = gateway.explain(1L,
                 new AiDtos.ExplainRequest("The database will lock the row.", "Transactions", "sentence"));
@@ -145,7 +146,8 @@ class AiClientConfigurationTest {
         ObjectProvider<ObservationRegistry> observationRegistry = beanFactory.getBeanProvider(ObservationRegistry.class);
         ChatModel model = configuration.aiChatModel(properties, objectMapper, observationRegistry);
         AiCallLogRepository repository = mock(AiCallLogRepository.class);
-        AiGateway gateway = new AiGateway(properties, ChatClient.builder(model).build(), objectMapper, repository);
+        AiGateway gateway = new AiGateway(properties, ChatClient.builder(model).build(),
+                new PromptRegistry(properties), objectMapper, repository);
 
         assertThatThrownBy(() -> gateway.explain(1L,
                 new AiDtos.ExplainRequest("The database will lock the row.", "Transactions", "sentence")))
