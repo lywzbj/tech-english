@@ -2,10 +2,13 @@
 import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { Lock, Right } from '@element-plus/icons-vue'
+import { Lock, Plus, Right, Share } from '@element-plus/icons-vue'
 import { grammarApi } from '@/api'
 import { errorMessage } from '@/utils/error'
-import type { GrammarPath, GrammarTopic } from '@/types/api'
+import type { GrammarPath, GrammarTopic, TopicCreateRequest } from '@/types/api'
+
+const SLUG_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/
+const CEFR_OPTIONS = ['A1', 'A2', 'B1', 'B2', 'C1', 'C2']
 
 const router = useRouter()
 const path = ref<GrammarPath | null>(null)
@@ -22,11 +25,23 @@ const percent = computed(() =>
   totalCount.value === 0 ? 0 : Math.round((masteredCount.value / totalCount.value) * 100),
 )
 
+/** Boss passed 3 days ago (1 for a retry): past the suggested window, worth a review pass. */
+function isReviewDue(topic: GrammarTopic) {
+  if (!topic.completed || !topic.nextReviewAt) return false
+  return new Date(topic.nextReviewAt).getTime() <= Date.now()
+}
+const dueCount = computed(() => allTopics.value.filter(isReviewDue).length)
+
 function statusLabel(topic: GrammarTopic) {
+  if (isReviewDue(topic)) return '待复习'
   if (topic.status === 'MASTERED') return '已掌握'
   if (topic.status === 'IN_PROGRESS') return '学习中'
   if (topic.status === 'AVAILABLE') return '可开始'
   return '未解锁'
+}
+
+function statusPill(topic: GrammarTopic) {
+  return isReviewDue(topic) ? 'due' : topic.status.toLowerCase()
 }
 
 function openTopic(topic: GrammarTopic) {
@@ -49,6 +64,60 @@ async function load() {
   }
 }
 
+const addDialogVisible = ref(false)
+const saving = ref(false)
+const emptyForm = () => ({
+  slug: '',
+  title: '',
+  summary: '',
+  cefrLevel: 'A2',
+  world: '',
+  prerequisites: [] as string[],
+  contentMd: '',
+})
+const form = ref(emptyForm())
+const prereqOptions = computed(() =>
+  allTopics.value.map((topic) => ({ value: topic.slug, label: `${topic.title}（${topic.slug}）` })),
+)
+
+function openAddDialog() {
+  form.value = emptyForm()
+  addDialogVisible.value = true
+}
+
+async function submitAddTopic() {
+  const draft = form.value
+  const slug = draft.slug.trim().toLowerCase()
+  if (!draft.title.trim() || !draft.summary.trim()) {
+    ElMessage.warning('名称和一句话简介为必填')
+    return
+  }
+  if (!SLUG_PATTERN.test(slug) || slug.length < 3) {
+    ElMessage.warning('标识符需为小写字母/数字，用单个连字符分隔，至少 3 位')
+    return
+  }
+  saving.value = true
+  try {
+    const body: TopicCreateRequest = {
+      slug,
+      title: draft.title.trim(),
+      summary: draft.summary.trim(),
+      cefrLevel: draft.cefrLevel,
+      world: draft.world.trim() || undefined,
+      prerequisites: draft.prerequisites.length ? draft.prerequisites : undefined,
+      contentMd: draft.contentMd.trim() || undefined,
+    }
+    const node = await grammarApi.createTopic(body)
+    ElMessage.success(`知识点「${node.title}」已加入知识树`)
+    addDialogVisible.value = false
+    await load()
+  } catch (err) {
+    ElMessage.error(errorMessage(err, '新增知识点失败'))
+  } finally {
+    saving.value = false
+  }
+}
+
 onMounted(load)
 </script>
 
@@ -62,9 +131,14 @@ onMounted(load)
           每个节点一个规则，配技术场景例句、一组练习和一次 Boss 挑战。Boss 达到 80 分即掌握，并解锁下一关。
         </p>
       </div>
-      <div v-if="path" class="path-progress">
-        <span>{{ masteredCount }} / {{ totalCount }} 已掌握</span>
-        <strong>{{ percent }}%</strong>
+      <div class="path-header-side">
+        <el-button :icon="Share" round @click="router.push('/grammar/tree')">知识树</el-button>
+        <el-button :icon="Plus" round @click="openAddDialog">新增知识点</el-button>
+        <span v-if="dueCount" class="due-chip">{{ dueCount }} 个节点到期建议复习</span>
+        <div v-if="path" class="path-progress">
+          <span>{{ masteredCount }} / {{ totalCount }} 已掌握</span>
+          <strong>{{ percent }}%</strong>
+        </div>
       </div>
     </header>
 
@@ -136,10 +210,13 @@ onMounted(load)
             @click="openTopic(topic)"
           >
             <div class="node-top">
-              <span class="node-status" :class="topic.status.toLowerCase()">
+              <span class="node-status" :class="statusPill(topic)">
                 {{ statusLabel(topic) }}
               </span>
-              <span class="node-cefr">{{ topic.cefrLevel }}</span>
+              <span class="node-top-meta">
+                <span v-if="topic.source && topic.source !== 'SEED'" class="node-custom">自定义</span>
+                <span class="node-cefr">{{ topic.cefrLevel }}</span>
+              </span>
             </div>
             <h3>{{ topic.title }}</h3>
             <p>{{ topic.summary }}</p>
@@ -158,10 +235,75 @@ onMounted(load)
         </div>
       </section>
     </template>
+
+    <el-dialog v-model="addDialogVisible" title="新增知识点" width="540px">
+      <el-form label-position="top">
+        <el-form-item label="名称" required>
+          <el-input v-model="form.title" maxlength="120" placeholder="如：非谓语动词作状语" />
+        </el-form-item>
+        <el-form-item label="标识符（用于网址，小写字母/数字/连字符）" required>
+          <el-input v-model="form.slug" maxlength="60" placeholder="如：non-finite-adverbial" />
+        </el-form-item>
+        <el-form-item label="一句话简介" required>
+          <el-input v-model="form.summary" type="textarea" :rows="2" maxlength="500" show-word-limit />
+        </el-form-item>
+        <div class="form-row">
+          <el-form-item label="CEFR 等级">
+            <el-select v-model="form.cefrLevel" style="width: 110px">
+              <el-option v-for="level in CEFR_OPTIONS" :key="level" :label="level" :value="level" />
+            </el-select>
+          </el-form-item>
+          <el-form-item label="所属世界" class="form-row-main">
+            <el-input v-model="form.world" maxlength="80" placeholder="填现有世界名挂入该组，留空则新建“自定义知识点”世界" />
+          </el-form-item>
+        </div>
+        <el-form-item label="前置知识点（需全部掌握后解锁本节点）">
+          <el-select
+            v-model="form.prerequisites"
+            multiple
+            filterable
+            clearable
+            style="width: 100%"
+            placeholder="不选则立即可学"
+          >
+            <el-option v-for="opt in prereqOptions" :key="opt.value" :label="opt.label" :value="opt.value" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="讲义 Markdown">
+          <el-input
+            v-model="form.contentMd"
+            type="textarea"
+            :rows="4"
+            placeholder="可留空，先生成占位讲义，进入节点后再补内容"
+          />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="addDialogVisible = false">取消</el-button>
+        <el-button type="primary" :loading="saving" @click="submitAddTopic">加入知识树</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
 <style scoped>
+.path-header-side {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
+}
+
+.due-chip {
+  padding: 5px 11px;
+  border: 1px solid var(--amber-line);
+  border-radius: 999px;
+  background: var(--amber-soft);
+  color: var(--amber-text);
+  font-size: 10px;
+  white-space: nowrap;
+}
+
 .path-progress {
   display: flex;
   align-items: baseline;
@@ -415,10 +557,40 @@ onMounted(load)
   color: var(--faint);
 }
 
+.node-status.due {
+  background: var(--amber-soft);
+  color: var(--amber-text);
+}
+
+.node-top-meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.node-custom {
+  padding: 2px 6px;
+  border-radius: 5px;
+  background: var(--blue-soft);
+  color: var(--blue);
+  font-size: 8px;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+}
+
 .node-cefr {
   color: var(--faint);
   font-family: var(--font-mono);
   font-size: 9px;
+}
+
+.form-row {
+  display: flex;
+  gap: 12px;
+}
+
+.form-row-main {
+  flex: 1;
 }
 
 .node-card h3 {

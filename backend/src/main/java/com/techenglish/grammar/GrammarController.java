@@ -42,4 +42,24 @@ public class GrammarController {
                                                  @PathVariable String slug) {
         return grammarService.generateExercises(user.id(), slug);
     }
+
+    /** Draws a new boss paper for a retake without reloading the whole lesson. */
+    @GetMapping("/topics/{slug}/boss")
+    public GrammarDtos.BossDrawResponse bossDraw(@AuthenticationPrincipal AuthUser user,
+                                                 @PathVariable String slug) {
+        return grammarService.drawBoss(user.id(), slug);
+    }
+
+    /** Knowledge tree (nodes + prerequisite edges + mastery) for the tree visualisation. */
+    @GetMapping("/tree")
+    public GrammarDtos.TreeResponse tree(@AuthenticationPrincipal AuthUser user) {
+        return grammarService.tree(user.id());
+    }
+
+    /** Manually adds a knowledge point to the tree. */
+    @PostMapping("/topics")
+    public GrammarDtos.TreeNodeDto createTopic(@AuthenticationPrincipal AuthUser user,
+                                               @Valid @RequestBody GrammarDtos.TopicCreateRequest request) {
+        return grammarService.createTopic(user.id(), request);
+    }
 }

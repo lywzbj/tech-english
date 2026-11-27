@@ -54,6 +54,14 @@ export interface GrammarTopic {
   locked: boolean
   completed: boolean
   sortOrder: number
+  nextReviewAt?: string | null
+  /** SEED=内置大纲 / USER=手动新增 / AI_PROPOSED / FROM_READING */
+  source?: string
+}
+
+export interface BossDrawResponse {
+  exercises: GrammarExercise[]
+  bossSource: 'AI' | 'SEED'
 }
 
 export interface GrammarWorld {
@@ -65,6 +73,51 @@ export interface GrammarWorld {
 export interface GrammarPath {
   worlds: GrammarWorld[]
   overallMastery: number
+}
+
+/** 知识树节点：可视化与熟练度着色的数据源 */
+export interface GrammarTreeNode {
+  id: number
+  slug: string
+  title: string
+  world: string
+  worldOrder: number
+  sortOrder: number
+  cefrLevel: string
+  summary: string
+  source: 'SEED' | 'USER' | 'AI_PROPOSED' | 'FROM_READING' | string
+  status: 'LOCKED' | 'AVAILABLE' | 'IN_PROGRESS' | 'MASTERED'
+  mastery: number
+  locked: boolean
+  completed: boolean
+  nextReviewAt?: string | null
+  lastPracticedAt?: string | null
+  originArticleId?: number | null
+  originSentence?: string | null
+}
+
+/** upSlug 依赖 downSlug（down 是前置/父节点） */
+export interface GrammarTreeEdge {
+  upSlug: string
+  downSlug: string
+  edgeType: string
+}
+
+export interface GrammarTree {
+  nodes: GrammarTreeNode[]
+  edges: GrammarTreeEdge[]
+  overallMastery: number
+}
+
+/** 手动新增知识点的请求体 */
+export interface TopicCreateRequest {
+  slug: string
+  title: string
+  summary: string
+  cefrLevel?: string
+  world?: string
+  prerequisites?: string[]
+  contentMd?: string
 }
 
 export interface GrammarExample {
@@ -81,6 +134,8 @@ export interface GrammarExercise {
   skill?: 'recognize' | 'form' | 'use' | null
   level?: number | null
   source: 'SEED' | 'AI'
+  /** Boss paper only: previously answered wrong, pulled back for re-practice. */
+  wrongReview?: boolean
 }
 
 export interface GrammarPool {
@@ -114,6 +169,9 @@ export interface GrammarLesson {
   boss: GrammarExercise[]
   pool: GrammarPool
   history: GrammarHistory
+  /** Proficiency signal: mastered, or the practice pool is fully answered correctly —
+   *  the UI should take the user straight to the boss instead of the fixed practice set. */
+  recommendBoss: boolean
 }
 
 export interface AttemptResult {

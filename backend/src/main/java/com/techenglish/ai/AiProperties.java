@@ -41,7 +41,8 @@ public class AiProperties {
             Map.entry("grammar-explain", "v1"),   // 语法知识解读
             Map.entry("writing-review", "v1"),    // 写作批改
             Map.entry("question-gen", "v2"),      // 阅读理解 AI 自测出题（小节级单选）
-            Map.entry("exercise-gen", "v1"),      // 语法练习出题(由浅入深)
+            Map.entry("exercise-gen", "v2"),      // 语法练习出题(选择+改写/翻译/造句混合)
+            Map.entry("exercise-judge", "v1"),   // 语法输出题 AI 判分
             Map.entry("ability-assess", "v1"),    // 能力评估与学习建议
             Map.entry("preview", "v1"),          // 阅读预习(核心词+结构预告)
             Map.entry("vocab-judge", "v1"),      // 读后结算:猜词判定

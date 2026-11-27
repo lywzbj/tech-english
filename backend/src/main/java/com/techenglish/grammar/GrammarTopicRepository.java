@@ -9,4 +9,8 @@ public interface GrammarTopicRepository extends JpaRepository<GrammarTopic, Long
     List<GrammarTopic> findByPublishedTrueOrderByWorldOrderAscSortOrderAsc();
 
     Optional<GrammarTopic> findBySlugAndPublishedTrue(String slug);
+
+    boolean existsBySlugAndDeleted(String slug, int deleted);
+
+    List<GrammarTopic> findByDeletedOrderByWorldOrderAscSortOrderAsc(int deleted);
 }

@@ -1,6 +1,6 @@
 package com.techenglish.seed;
 
-import com.techenglish.reading.QuestionType;
+import com.techenglish.question.QuestionType;
 import com.techenglish.reading.ReadingSourceType;
 
 import java.util.List;

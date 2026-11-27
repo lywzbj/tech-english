@@ -1,14 +1,11 @@
 <script setup lang="ts">
-import { computed, reactive, ref, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ElMessage } from 'element-plus'
 import { ArrowLeft, Right } from '@element-plus/icons-vue'
-import GrammarExerciseList from '@/components/grammar/GrammarExerciseList.vue'
 import { grammarApi } from '@/api'
-import { completeTaskByRef } from '@/composables/useTaskCompletion'
 import { renderMarkdown } from '@/utils/markdown'
 import { errorMessage } from '@/utils/error'
-import type { AttemptResult, AttemptsResponse, GrammarLesson, GrammarTopic } from '@/types/api'
+import type { GrammarLesson } from '@/types/api'
 
 const PASS_SCORE = 80
 
@@ -17,88 +14,38 @@ const router = useRouter()
 const lesson = ref<GrammarLesson | null>(null)
 const loading = ref(true)
 const error = ref('')
-const generating = ref(false)
-const generationError = ref('')
-const submittingPractice = ref(false)
-const submittingBoss = ref(false)
-const practiceResult = ref<AttemptsResponse | null>(null)
-const bossResult = ref<AttemptsResponse | null>(null)
-const practiceAnswers = reactive<Record<string, string>>({})
-const bossAnswers = reactive<Record<string, string>>({})
-const bossStarted = ref(false)
-let generationAttemptedFor = ''
 
 const lessonHtml = computed(() => renderMarkdown(lesson.value?.contentMd ?? ''))
+const masteredNode = computed(() => lesson.value?.topic.status === 'MASTERED')
+// Proficiency signal from the server: practice pool consumed — the practice page
+// will skip straight to the boss paper (wrong answers first).
+const recommendBoss = computed(() => Boolean(lesson.value?.recommendBoss))
 
-const practiceAnswered = computed(() => {
-  if (!lesson.value) return 0
-  return lesson.value.practice.filter((exercise) => Boolean(practiceAnswers[exercise.id])).length
-})
-const allPracticeAnswered = computed(
-  () => Boolean(lesson.value) && practiceAnswered.value === (lesson.value?.practice.length ?? 0),
-)
-const bossAnswered = computed(() => {
-  if (!lesson.value) return 0
-  return lesson.value.boss.filter((exercise) => Boolean(bossAnswers[exercise.id])).length
-})
-const allBossAnswered = computed(
-  () => Boolean(lesson.value) && bossAnswered.value === (lesson.value?.boss.length ?? 0),
-)
-
-const practiceResults = computed(() => toResultMap(practiceResult.value))
-const bossResults = computed(() => toResultMap(bossResult.value))
-const bossRequiredCorrect = computed(() =>
-  lesson.value ? Math.ceil((lesson.value.boss.length * PASS_SCORE) / 100) : 0,
-)
 const accuracy = computed(() => {
   const history = lesson.value?.history
   if (!history || history.attempts === 0) return 0
   return Math.round((history.correct / history.attempts) * 100)
 })
-const resultHeading = computed(() => {
-  const result = bossResult.value
-  if (!result) return ''
-  if (result.passed) return 'Boss 通过，节点已掌握。'
-  if (result.status === 'MASTERED') return '本次未达标，但节点此前已掌握。'
-  return '还没过线，先把错题弄懂。'
-})
-const resultMessage = computed(() => {
-  const result = bossResult.value
-  if (!result) return ''
-  if (result.passed) {
-    return result.nextSlug
-      ? '下一关已经解锁，也可以过几天回来复习。'
-      : '这个节点已经掌握，可以回到地图继续或复习。'
-  }
-  if (result.status === 'MASTERED') return '已掌握的节点不会因为一次低分回退。'
-  return `本关需要 ${PASS_SCORE} 分（答对 ${bossRequiredCorrect.value} / ${lesson.value?.boss.length ?? 0} 题）。`
+
+const lastPracticedText = computed(() => {
+  const raw = lesson.value?.history.lastPracticedAt
+  if (!raw) return ''
+  const date = new Date(raw)
+  if (Number.isNaN(date.getTime())) return ''
+  return date.toLocaleDateString('zh-CN', { month: 'long', day: 'numeric' })
 })
 
-function toResultMap(response: AttemptsResponse | null): Record<string, AttemptResult> {
-  const map: Record<string, AttemptResult> = {}
-  response?.results.forEach((item) => {
-    map[item.exerciseId] = item
-  })
-  return map
-}
-
-function clearAnswers(record: Record<string, string>) {
-  Object.keys(record).forEach((key) => delete record[key])
-}
-
-function resetAttempts() {
-  practiceResult.value = null
-  bossResult.value = null
-  bossStarted.value = false
-  clearAnswers(practiceAnswers)
-  clearAnswers(bossAnswers)
-}
+const nextReviewText = computed(() => {
+  const raw = lesson.value?.topic.nextReviewAt
+  if (!raw) return ''
+  const date = new Date(raw)
+  if (Number.isNaN(date.getTime())) return ''
+  return date.toLocaleDateString('zh-CN', { month: 'long', day: 'numeric' })
+})
 
 async function load(slug: string) {
   loading.value = true
   error.value = ''
-  generationError.value = ''
-  resetAttempts()
   try {
     lesson.value = await grammarApi.lesson(slug)
   } catch (err) {
@@ -107,162 +54,11 @@ async function load(slug: string) {
   } finally {
     loading.value = false
   }
+}
+
+function goPractice() {
   if (lesson.value) {
-    void maybeGenerate(slug)
-  }
-}
-
-async function maybeGenerate(slug: string) {
-  const current = lesson.value
-  if (!current || !current.pool.aiConfigured || !current.pool.generationNeeded) return
-  if (generating.value || generationAttemptedFor === slug) return
-  await generatePool(slug)
-}
-
-async function generatePool(slug: string) {
-  if (generating.value) return
-  generationAttemptedFor = slug
-  generating.value = true
-  generationError.value = ''
-  try {
-    await grammarApi.generate(slug)
-    lesson.value = await grammarApi.lesson(slug)
-    if (lesson.value.pool.generationNeeded) {
-      generationError.value = 'AI 只生成了部分题目，可以重试补齐。'
-    }
-  } catch (err) {
-    generationError.value = errorMessage(err, 'AI 出题失败')
-  } finally {
-    generating.value = false
-  }
-}
-
-function selectPractice(exerciseId: string, option: string) {
-  practiceAnswers[exerciseId] = option
-}
-
-function selectBoss(exerciseId: string, option: string) {
-  bossAnswers[exerciseId] = option
-}
-
-function applyTopic(response: AttemptsResponse) {
-  const current = lesson.value
-  if (!current) return
-  current.topic.mastery = response.mastery
-  current.topic.status = response.status as GrammarTopic['status']
-  current.topic.completed = response.status === 'MASTERED'
-  current.history.attempts += response.total
-  current.history.correct += response.correct
-  current.history.lastPracticedAt = new Date().toISOString()
-  const freshWrong = response.results
-    .filter((item) => !item.correct)
-    .map((item) => ({
-      exerciseId: item.exerciseId,
-      prompt: item.prompt,
-      yourAnswer: item.yourAnswer,
-      correctAnswer: item.correctAnswer,
-    }))
-  if (freshWrong.length) {
-    const freshIds = new Set(freshWrong.map((item) => item.exerciseId))
-    current.history.recentWrong = [
-      ...freshWrong,
-      ...current.history.recentWrong.filter((item) => !freshIds.has(item.exerciseId)),
-    ].slice(0, 5)
-  }
-  if (response.mode === 'BOSS') {
-    current.history.bossScore = response.bossScore
-  }
-}
-
-async function submitPractice() {
-  if (!lesson.value) return
-  if (!allPracticeAnswered.value) {
-    ElMessage.warning('先把练习全部选完')
-    return
-  }
-  submittingPractice.value = true
-  try {
-    const response = await grammarApi.submit(
-      lesson.value.topic.slug,
-      'PRACTICE',
-      lesson.value.practice.map((exercise) => ({
-        exerciseId: exercise.id,
-        answer: practiceAnswers[exercise.id],
-      })),
-    )
-    practiceResult.value = response
-    applyTopic(response)
-    ElMessage.success(`练习完成：答对 ${response.correct} / ${response.total} 题`)
-    await completeTaskByRef('GRAMMAR', lesson.value.topic.id)
-  } catch (err) {
-    ElMessage.error(errorMessage(err, '提交失败'))
-  } finally {
-    submittingPractice.value = false
-  }
-}
-
-async function submitBoss() {
-  if (!lesson.value) return
-  if (!allBossAnswered.value) {
-    ElMessage.warning('先把 Boss 题目全部选完')
-    return
-  }
-  submittingBoss.value = true
-  try {
-    const response = await grammarApi.submit(
-      lesson.value.topic.slug,
-      'BOSS',
-      lesson.value.boss.map((exercise) => ({
-        exerciseId: exercise.id,
-        answer: bossAnswers[exercise.id],
-      })),
-    )
-    bossResult.value = response
-    applyTopic(response)
-    ElMessage({
-      type: response.passed ? 'success' : 'warning',
-      message: response.passed
-        ? `Boss 通过：${response.correct} / ${response.total} 题`
-        : `Boss 未通过：${response.correct} / ${response.total} 题，需 ${PASS_SCORE} 分`,
-    })
-    setTimeout(() => {
-      document.getElementById('boss-result')?.scrollIntoView({ behavior: 'smooth', block: 'center' })
-    }, 60)
-  } catch (err) {
-    ElMessage.error(errorMessage(err, '提交失败'))
-  } finally {
-    submittingBoss.value = false
-  }
-}
-
-function startBoss() {
-  bossStarted.value = true
-  setTimeout(() => {
-    document.getElementById('boss-section')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
-  }, 40)
-}
-
-function retryBoss() {
-  bossResult.value = null
-  clearAnswers(bossAnswers)
-  bossStarted.value = true
-  setTimeout(() => {
-    document.getElementById('boss-section')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
-  }, 40)
-}
-
-function retryPractice() {
-  if (lesson.value) {
-    void load(lesson.value.topic.slug)
-  }
-}
-
-function next() {
-  const slug = bossResult.value?.nextSlug
-  if (slug) {
-    router.push(`/grammar/${slug}`)
-  } else {
-    router.push('/grammar')
+    router.push(`/grammar/${lesson.value.topic.slug}/practice`)
   }
 }
 
@@ -270,7 +66,6 @@ watch(
   () => route.params.slug as string,
   (slug) => {
     if (slug) {
-      generationAttemptedFor = ''
       load(slug)
     }
   },
@@ -298,18 +93,69 @@ watch(
         <div>
           <div class="lesson-tags">
             <span class="pill green">{{ lesson.topic.cefrLevel }}</span>
-            <span class="pill">{{ lesson.topic.status === 'MASTERED' ? '已掌握' : '学习节点' }}</span>
-            <span class="pill amber">{{ lesson.practice.length }} 题练习 · {{ lesson.boss.length }} 题 Boss</span>
+            <span class="pill">{{ masteredNode ? '已掌握' : '学习节点' }}</span>
+            <span v-if="lesson.topic.source && lesson.topic.source !== 'SEED'" class="pill amber">
+              自定义
+            </span>
           </div>
           <h1>{{ lesson.topic.title }}</h1>
           <p>{{ lesson.topic.summary }}</p>
         </div>
-        <div class="mastery-box">
-          <span>当前掌握度</span>
-          <strong>{{ Math.round(lesson.topic.mastery) }}<small>%</small></strong>
-          <div class="mastery-rule">Boss {{ PASS_SCORE }} 分通过即掌握，并解锁下一关</div>
+        <div class="head-side">
+          <div class="mastery-box">
+            <span>当前掌握度</span>
+            <strong>{{ Math.round(lesson.topic.mastery) }}<small>%</small></strong>
+            <div class="mastery-rule">
+              {{
+                masteredNode
+                  ? '复习模式：成绩只升不降'
+                  : recommendBoss
+                    ? '练习池已刷完：进页后直接挑战 Boss，错题优先'
+                    : `Boss ${PASS_SCORE} 分通过即掌握，并解锁下一关`
+              }}
+            </div>
+          </div>
+          <el-button type="primary" size="large" class="cta-button" @click="goPractice">
+            开始做题
+            <span class="cta-count">{{ lesson.practice.length }} 练习 · {{ lesson.boss.length }} Boss</span>
+            <el-icon class="el-icon--right"><Right /></el-icon>
+          </el-button>
+          <button
+            v-if="lesson.history.recentWrong.length"
+            type="button"
+            class="wrong-entry"
+            @click="router.push(`/grammar/${lesson.topic.slug}/wrong`)"
+          >
+            最近错题 {{ lesson.history.recentWrong.length }} 道 →
+          </button>
         </div>
       </header>
+
+      <section class="status-strip" :class="{ 'status-strip--empty': lesson.history.attempts === 0 }">
+        <template v-if="lesson.history.attempts > 0">
+          <div class="status-tile">
+            <span>累计做题</span>
+            <strong>{{ lesson.history.attempts }}</strong>
+          </div>
+          <div class="status-tile">
+            <span>正确率</span>
+            <strong>{{ accuracy }}%</strong>
+          </div>
+          <div class="status-tile" v-if="lesson.history.bossScore != null">
+            <span>Boss 最高</span>
+            <strong>{{ lesson.history.bossScore }}</strong>
+          </div>
+          <div class="status-tile" v-if="lastPracticedText">
+            <span>最近练习</span>
+            <strong>{{ lastPracticedText }}</strong>
+          </div>
+          <div class="status-tile" v-if="nextReviewText">
+            <span>下次复习</span>
+            <strong>{{ nextReviewText }}</strong>
+          </div>
+        </template>
+        <p v-else class="status-empty">还没有做题记录，读完讲义后点右上角「开始做题」。</p>
+      </section>
 
       <div class="lesson-layout">
         <article class="card lesson-content">
@@ -330,184 +176,8 @@ watch(
             </div>
           </section>
 
-          <section v-if="lesson.history.attempts > 0" class="card side-card history-card">
-            <p class="eyebrow">YOUR RECORD</p>
-            <h2>练习记录</h2>
-            <div class="history-stats">
-              <span><strong>{{ lesson.history.attempts }}</strong> 题</span>
-              <span>正确率 <strong>{{ accuracy }}%</strong></span>
-              <span v-if="lesson.history.bossScore != null">
-                Boss 最高 <strong>{{ lesson.history.bossScore }}</strong>
-              </span>
-            </div>
-            <div v-if="lesson.history.recentWrong.length" class="wrong-list">
-              <p class="wrong-title">最近错题</p>
-              <div v-for="wrong in lesson.history.recentWrong" :key="wrong.exerciseId" class="wrong-item">
-                <p>{{ wrong.prompt }}</p>
-                <span>你选：{{ wrong.yourAnswer }} · 正确：{{ wrong.correctAnswer }}</span>
-              </div>
-            </div>
-          </section>
-
-          <section class="card side-card tip-card">
-            <p class="eyebrow">HOW TO PRACTICE</p>
-            <p>
-              先读规则和例句，再做练习：练习会给即时解析，Boss 提交后才判分。
-              错题比全对更有信息量。
-            </p>
-          </section>
         </aside>
       </div>
-
-      <section class="exercise-section">
-        <div class="section-head">
-          <div>
-            <p class="eyebrow">PRACTICE SET</p>
-            <h2 class="section-title">先练一组，再进 Boss</h2>
-            <p class="section-sub">
-              识别 → 形式 → 使用。提交后逐题给出正确答案和每个选项的解析。
-              <span v-if="!lesson.pool.aiConfigured">当前为内置题库，配置 AI 后会自动扩充。</span>
-            </p>
-          </div>
-          <span class="answered">{{ practiceAnswered }} / {{ lesson.practice.length }} 已作答</span>
-        </div>
-
-        <div v-if="generating" class="card ai-state">
-          <div>
-            <strong>AI 正在为这个节点补充题目</strong>
-            <p>会生成练习和 Boss 题各 5 道，通常需要 20–40 秒。上面的规则和例句可以先读。</p>
-          </div>
-          <el-skeleton animated :rows="4" />
-        </div>
-
-        <template v-else>
-          <div v-if="generationError" class="card ai-error">
-            <div>
-              <strong>AI 题目暂未补齐</strong>
-              <p>{{ generationError }} 先用现有题目练习；也可以刷新页面后自动重试。</p>
-            </div>
-            <el-button
-              v-if="practiceAnswered === 0 && !practiceResult"
-              size="small"
-              @click="lesson && generatePool(lesson.topic.slug)"
-            >
-              重试生成
-            </el-button>
-          </div>
-
-          <GrammarExerciseList
-            :exercises="lesson.practice"
-            :answers="practiceAnswers"
-            :results="practiceResults"
-            :disabled="Boolean(practiceResult)"
-            @select="selectPractice"
-          />
-
-          <div v-if="!practiceResult" class="submit-bar">
-            <div>
-              <strong>{{ allPracticeAnswered ? '可以提交了' : '还有题目没有作答' }}</strong>
-              <span>
-                {{ allPracticeAnswered ? '提交后会立即看到逐题解析。' : '先选一个你觉得最自然的答案。' }}
-              </span>
-            </div>
-            <el-button
-              type="primary"
-              size="large"
-              :loading="submittingPractice"
-              :disabled="!allPracticeAnswered"
-              @click="submitPractice"
-            >
-              提交练习
-            </el-button>
-          </div>
-
-          <div v-else class="practice-done card">
-            <div>
-              <strong>练习完成：{{ practiceResult.correct }} / {{ practiceResult.total }} 题</strong>
-              <span>正确率 {{ Math.round(practiceResult.score) }}%。先看错题解析，再进 Boss。</span>
-            </div>
-            <div class="practice-done-actions">
-              <el-button @click="retryPractice">再练一组</el-button>
-              <el-button type="primary" @click="startBoss" :disabled="bossStarted">
-                进入 Boss
-              </el-button>
-            </div>
-          </div>
-        </template>
-      </section>
-
-      <section v-if="practiceResult" id="boss-section" class="exercise-section boss-section">
-        <div class="section-head">
-          <div>
-            <p class="eyebrow">BOSS CHECK</p>
-            <h2 class="section-title">独立题池 · 混合挑战</h2>
-            <p class="section-sub">
-              {{ lesson.boss.length }} 道题，答对 {{ bossRequiredCorrect }} 道通过（{{ PASS_SCORE }} 分）。
-              <span v-if="lesson.pool.bossSource === 'SEED'">
-                当前使用 3 道内置题，需全部答对；生成更多题目后会扩为 5 题。
-              </span>
-            </p>
-          </div>
-          <span class="answered">{{ bossAnswered }} / {{ lesson.boss.length }} 已作答</span>
-        </div>
-
-        <div v-if="!bossStarted" class="card boss-intro">
-          <div>
-            <strong>准备好了再开始</strong>
-            <p>Boss 没有即时提示，提交后统一判分。没通过可以重做，也可以先回去再练一组。</p>
-          </div>
-          <el-button type="primary" @click="startBoss">开始 Boss</el-button>
-        </div>
-
-        <template v-else>
-          <GrammarExerciseList
-            :exercises="lesson.boss"
-            :answers="bossAnswers"
-            :results="bossResults"
-            :disabled="Boolean(bossResult)"
-            @select="selectBoss"
-          />
-
-          <div v-if="!bossResult" class="submit-bar">
-            <div>
-              <strong>{{ allBossAnswered ? '可以提交 Boss 了' : '还有 Boss 题目没有作答' }}</strong>
-              <span>{{ allBossAnswered ? '提交后统一判分。' : 'Boss 没有提示，按自己的判断选。' }}</span>
-            </div>
-            <el-button
-              type="primary"
-              size="large"
-              :loading="submittingBoss"
-              :disabled="!allBossAnswered"
-              @click="submitBoss"
-            >
-              提交 Boss
-            </el-button>
-          </div>
-
-          <div v-else id="boss-result" class="result-panel" :class="{ passed: bossResult.passed }">
-            <div class="result-score">
-              <span>{{ bossResult.passed ? 'BOSS PASSED' : 'BOSS CHECK' }}</span>
-              <strong>{{ bossResult.score }}</strong>
-              <small>掌握度 {{ bossResult.mastery }}%</small>
-            </div>
-            <div class="result-copy">
-              <h3>{{ resultHeading }}</h3>
-              <p>
-                你答对了 {{ bossResult.correct }} / {{ bossResult.total }} 题。
-                {{ resultMessage }}
-              </p>
-            </div>
-            <div class="result-actions">
-              <el-button @click="router.push('/grammar')">回到地图</el-button>
-              <el-button v-if="!bossResult.passed" plain @click="retryPractice">再练一组</el-button>
-              <el-button v-if="!bossResult.passed" @click="retryBoss">再挑战一次</el-button>
-              <el-button v-if="bossResult.nextSlug" type="primary" @click="next">
-                下一关 <el-icon class="el-icon--right"><Right /></el-icon>
-              </el-button>
-            </div>
-          </div>
-        </template>
-      </section>
     </template>
   </div>
 </template>
@@ -560,8 +230,15 @@ watch(
   font-size: 13px;
 }
 
+.head-side {
+  display: grid;
+  flex: 0 0 auto;
+  justify-items: end;
+  gap: 12px;
+}
+
 .mastery-box {
-  flex: 0 0 190px;
+  width: 190px;
   padding: 15px 17px;
   border: 1px solid var(--line);
   border-radius: 14px;
@@ -595,6 +272,18 @@ watch(
   color: var(--faint);
   font-size: 8px;
   line-height: 1.5;
+}
+
+.cta-button {
+  display: inline-flex;
+  align-items: center;
+}
+
+.cta-count {
+  margin-left: 8px;
+  opacity: 0.75;
+  font-size: 11px;
+  font-weight: 400;
 }
 
 .lesson-layout {
@@ -683,288 +372,92 @@ watch(
   line-height: 1.55;
 }
 
-.history-card {
+.status-strip {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 12px;
+  margin-bottom: 20px;
+}
+
+.status-strip--empty {
+  grid-template-columns: 1fr;
+}
+
+.status-tile {
+  display: grid;
+  gap: 4px;
+  padding: 12px 16px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
   background: var(--surface);
 }
 
-.history-stats {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px 14px;
-  margin-top: 10px;
+.status-tile > span {
   color: var(--muted);
-  font-size: 11px;
+  font-size: 10px;
 }
 
-.history-stats strong {
+.status-tile > strong {
   color: var(--ink);
   font-family: var(--font-mono);
+  font-size: 15px;
   font-weight: 600;
 }
 
-.wrong-list {
-  margin-top: 16px;
-  padding-top: 13px;
-  border-top: 1px solid var(--line);
-}
-
-.wrong-title {
-  color: var(--faint);
-  font-family: var(--font-mono);
-  font-size: 9px;
-  letter-spacing: 0.08em;
-}
-
-.wrong-item {
-  margin-top: 10px;
-}
-
-.wrong-item p {
-  display: -webkit-box;
-  overflow: hidden;
-  color: var(--ink);
-  font-size: 11px;
-  line-height: 1.55;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
-}
-
-.wrong-item span {
-  display: block;
-  margin-top: 3px;
-  color: var(--faint);
-  font-size: 9.5px;
-  line-height: 1.5;
-  overflow-wrap: anywhere;
-}
-
-.tip-card {
-  background: var(--surface-2);
-}
-
-.tip-card > p:last-child {
-  margin-top: 8px;
+.status-empty {
+  margin: 0;
+  padding: 12px 16px;
+  border: 1px dashed var(--line);
+  border-radius: 12px;
   color: var(--muted);
   font-size: 11px;
-  line-height: 1.75;
 }
 
-.exercise-section {
-  margin-top: 34px;
-}
-
-.boss-section {
-  padding-top: 22px;
-  border-top: 1px dashed var(--line);
-}
-
-.section-head {
-  display: flex;
-  align-items: flex-end;
-  justify-content: space-between;
-  gap: 20px;
-  margin-bottom: 14px;
-}
-
-.section-title {
-  margin-top: 4px;
-  font-family: var(--font-reading);
-  font-size: 26px;
-  font-weight: 600;
-  letter-spacing: -0.025em;
-}
-
-.section-sub {
-  max-width: 680px;
-  margin-top: 5px;
+.wrong-entry {
+  padding: 0;
+  border: 0;
+  background: transparent;
   color: var(--muted);
   font-size: 11px;
-  line-height: 1.7;
+  cursor: pointer;
 }
 
-.section-sub span {
-  color: var(--faint);
+.wrong-entry:hover {
+  color: var(--rose);
 }
 
-.answered {
-  flex: 0 0 auto;
-  color: var(--faint);
-  font-family: var(--font-mono);
-  font-size: 10px;
-}
+@media (min-width: 1001px) {
+  .lesson-page {
+    display: flex;
+    flex-direction: column;
+    /* 固定为视口剩余高度：topbar 为 sticky，页面内容 = 100vh − topbar − content 上下内边距 */
+    height: calc(100vh - var(--topbar-height, 80px) - 92px);
+    min-height: 460px;
+  }
 
-.ai-state {
-  display: grid;
-  gap: 16px;
-  padding: 20px;
-}
+  .lesson-head,
+  .status-strip,
+  .back-link {
+    flex: 0 0 auto;
+  }
 
-.ai-state strong {
-  font-size: 12px;
-}
+  .lesson-layout {
+    flex: 1;
+    min-height: 0;
+    align-items: stretch;
+  }
 
-.ai-state p {
-  margin-top: 4px;
-  color: var(--muted);
-  font-size: 11px;
-  line-height: 1.65;
-}
+  .lesson-content {
+    min-height: 0;
+    overflow-y: auto;
+  }
 
-.ai-error {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  margin-bottom: 12px;
-  padding: 14px 18px;
-  border-color: var(--amber-line);
-  background: var(--amber-soft);
-}
-
-.ai-error strong {
-  color: var(--amber-text);
-  font-size: 12px;
-}
-
-.ai-error p {
-  margin-top: 3px;
-  color: var(--muted);
-  font-size: 11px;
-  line-height: 1.6;
-}
-
-.practice-done {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 20px;
-  margin-top: 18px;
-  padding: 18px 22px;
-}
-
-.practice-done strong {
-  display: block;
-  font-size: 12px;
-}
-
-.practice-done span {
-  display: block;
-  margin-top: 3px;
-  color: var(--faint);
-  font-size: 10px;
-}
-
-.practice-done-actions {
-  display: flex;
-  flex: 0 0 auto;
-  gap: 7px;
-}
-
-.boss-intro {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 20px;
-  padding: 20px 22px;
-}
-
-.boss-intro strong {
-  font-size: 12px;
-}
-
-.boss-intro p {
-  max-width: 620px;
-  margin-top: 4px;
-  color: var(--muted);
-  font-size: 11px;
-  line-height: 1.65;
-}
-
-.submit-bar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 20px;
-  margin-top: 20px;
-  padding: 18px 22px;
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  background: var(--surface);
-}
-
-.submit-bar strong {
-  display: block;
-  font-size: 12px;
-}
-
-.submit-bar span {
-  display: block;
-  margin-top: 2px;
-  color: var(--faint);
-  font-size: 10px;
-}
-
-.result-panel {
-  display: grid;
-  grid-template-columns: 120px minmax(0, 1fr) auto;
-  gap: 22px;
-  align-items: center;
-  margin-top: 22px;
-  padding: 22px 24px;
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  background: linear-gradient(135deg, var(--wash-a), var(--wash-b));
-}
-
-.result-panel.passed {
-  border-color: var(--green-line);
-}
-
-.result-score {
-  display: grid;
-  justify-items: center;
-  padding-right: 20px;
-  border-right: 1px solid var(--line);
-}
-
-.result-score span {
-  color: var(--muted);
-  font-family: var(--font-mono);
-  font-size: 8px;
-  letter-spacing: 0.08em;
-}
-
-.result-score strong {
-  font-family: var(--font-reading);
-  font-size: 40px;
-  font-weight: 600;
-  line-height: 1.1;
-}
-
-.result-score small {
-  color: var(--green);
-  font-size: 9px;
-}
-
-.result-copy h3 {
-  font-family: var(--font-reading);
-  font-size: 21px;
-  font-weight: 600;
-}
-
-.result-copy p {
-  max-width: 560px;
-  margin-top: 4px;
-  color: var(--muted);
-  font-size: 11px;
-  line-height: 1.65;
-}
-
-.result-actions {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: flex-end;
-  gap: 7px;
+  .lesson-side {
+    position: static;
+    min-height: 0;
+    overflow-y: auto;
+    align-content: start;
+  }
 }
 
 @media (max-width: 1000px) {
@@ -984,42 +477,22 @@ watch(
     flex-direction: column;
   }
 
+  .head-side {
+    width: 100%;
+    justify-items: stretch;
+  }
+
   .mastery-box {
     width: 100%;
     text-align: left;
   }
 
+  .cta-button {
+    justify-content: center;
+  }
+
   .lesson-side {
     grid-template-columns: 1fr;
-  }
-
-  .section-head {
-    align-items: flex-start;
-    flex-direction: column;
-    gap: 6px;
-  }
-
-  .result-panel {
-    grid-template-columns: 1fr;
-  }
-
-  .result-score {
-    justify-items: start;
-    padding: 0 0 12px;
-    border-right: 0;
-    border-bottom: 1px solid var(--line);
-  }
-
-  .result-actions {
-    justify-content: flex-start;
-  }
-
-  .submit-bar,
-  .practice-done,
-  .boss-intro,
-  .ai-error {
-    align-items: flex-start;
-    flex-direction: column;
   }
 }
 </style>

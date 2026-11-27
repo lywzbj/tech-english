@@ -4,11 +4,13 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.techenglish.grammar.GrammarLesson;
 import com.techenglish.grammar.GrammarLessonRepository;
 import com.techenglish.grammar.GrammarTopic;
+import com.techenglish.grammar.GrammarTopicEdge;
+import com.techenglish.grammar.GrammarTopicEdgeRepository;
 import com.techenglish.grammar.GrammarTopicRepository;
+import com.techenglish.question.Question;
+import com.techenglish.question.QuestionRepository;
 import com.techenglish.reading.ReadingArticle;
 import com.techenglish.reading.ReadingArticleRepository;
-import com.techenglish.reading.ReadingQuestion;
-import com.techenglish.reading.ReadingQuestionRepository;
 import com.techenglish.reading.ReadingTag;
 import com.techenglish.reading.ReadingTagRepository;
 import com.techenglish.vocabulary.VocabEntry;
@@ -22,6 +24,11 @@ import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.List;
+import java.util.Map;
+import java.util.function.Function;
+import java.util.stream.Collectors;
+
 @Component
 @Order(10)
 @RequiredArgsConstructor
@@ -30,10 +37,11 @@ public class ContentSeeder implements ApplicationRunner {
     private static final Logger log = LoggerFactory.getLogger(ContentSeeder.class);
 
     private final GrammarTopicRepository topicRepository;
+    private final GrammarTopicEdgeRepository edgeRepository;
     private final GrammarLessonRepository lessonRepository;
     private final VocabEntryRepository vocabRepository;
     private final ReadingArticleRepository articleRepository;
-    private final ReadingQuestionRepository questionRepository;
+    private final QuestionRepository questionRepository;
     private final ReadingTagRepository tagRepository;
     private final ObjectMapper objectMapper;
 
@@ -49,35 +57,71 @@ public class ContentSeeder implements ApplicationRunner {
         }
     }
 
+    /**
+     * Idempotent upsert of the built-in syllabus: new slugs get topic + lesson + edges,
+     * existing slugs are only checked for missing prerequisite edges (never overwritten,
+     * so local lesson edits survive restarts). This doubles as the JSON-to-edge-table
+     * backfill for databases that predate the grammar_topic_edge migration.
+     */
     private int seedGrammar() throws Exception {
-        if (topicRepository.count() > 0) {
-            return 0;
-        }
-        int count = 0;
+        Map<String, GrammarTopic> bySlug = topicRepository
+                .findByDeletedOrderByWorldOrderAscSortOrderAsc(0).stream()
+                .collect(Collectors.toMap(GrammarTopic::getSlug, Function.identity(), (first, dup) -> first));
+        int added = 0;
+        int order = 0;
         for (GrammarSeedData.TopicSeed seed : GrammarSeedData.topics()) {
-            GrammarTopic topic = new GrammarTopic();
-            topic.setSlug(seed.slug());
-            topic.setTitle(seed.title());
-            topic.setWorld(seed.world());
-            topic.setWorldOrder(seed.worldOrder());
-            topic.setCefrLevel(seed.cefrLevel());
-            topic.setSummary(seed.summary());
-            topic.setPrerequisites(objectMapper.writeValueAsString(seed.prerequisites()));
-            topic.setSortOrder(count + 1);
-            topic.setPublished(true);
-            topic = topicRepository.save(topic);
+            order++;
+            GrammarTopic topic = bySlug.get(seed.slug());
+            if (topic == null) {
+                topic = new GrammarTopic();
+                topic.setSlug(seed.slug());
+                topic.setTitle(seed.title());
+                topic.setWorld(seed.world());
+                topic.setWorldOrder(seed.worldOrder());
+                topic.setCefrLevel(seed.cefrLevel());
+                topic.setSummary(seed.summary());
+                topic.setPrerequisites(objectMapper.writeValueAsString(seed.prerequisites()));
+                topic.setSortOrder(order);
+                topic.setPublished(true);
+                topic.setSource("SEED");
+                topic = topicRepository.save(topic);
 
-            GrammarLesson lesson = new GrammarLesson();
-            lesson.setTopic(topic);
-            lesson.setContentMd(seed.contentMd());
-            lesson.setExamplesJson(objectMapper.writeValueAsString(seed.examples()));
-            lesson.setExercisesJson(objectMapper.writeValueAsString(seed.exercises()));
-            lesson.setModel("seed");
-            lesson.setPromptVersion("seed-v1");
-            lessonRepository.save(lesson);
-            count++;
+                GrammarLesson lesson = new GrammarLesson();
+                lesson.setTopic(topic);
+                lesson.setContentMd(seed.contentMd());
+                lesson.setExamplesJson(objectMapper.writeValueAsString(seed.examples()));
+                lesson.setExercisesJson(objectMapper.writeValueAsString(seed.exercises()));
+                lesson.setModel("seed");
+                lesson.setPromptVersion("seed-v1");
+                lessonRepository.save(lesson);
+
+                // 种子题同时物化进统一题库（exercises_json 保留为存档）；key 方案与 backfill 一致。
+                for (GrammarSeedData.ExerciseSeed exercise : seed.exercises()) {
+                    questionRepository.save(seedQuestion(topic.getId(), exercise));
+                }
+
+                bySlug.put(topic.getSlug(), topic);
+                added++;
+            }
+            seedPrerequisiteEdges(topic, seed, bySlug);
         }
-        return count;
+        return added;
+    }
+
+    /** Insert seed prerequisite edges that are not in the edge table yet. */
+    private void seedPrerequisiteEdges(GrammarTopic topic, GrammarSeedData.TopicSeed seed,
+                                       Map<String, GrammarTopic> bySlug) {
+        for (String prereqSlug : seed.prerequisites()) {
+            GrammarTopic prereq = bySlug.get(prereqSlug);
+            if (prereq == null) {
+                log.warn("Grammar seed edge skipped: unknown prerequisite '{}' of '{}'",
+                        prereqSlug, topic.getSlug());
+                continue;
+            }
+            if (!edgeRepository.existsByUpTopicIdAndDownTopicIdAndDeleted(topic.getId(), prereq.getId(), 0)) {
+                edgeRepository.save(GrammarTopicEdge.prerequisite(topic.getId(), prereq.getId()));
+            }
+        }
     }
 
     private int seedVocabulary() {
@@ -127,13 +171,16 @@ public class ContentSeeder implements ApplicationRunner {
 
             int order = 1;
             for (ReadingSeedData.QuestionSeed questionSeed : seed.questions()) {
-                ReadingQuestion question = new ReadingQuestion();
+                Question question = new Question();
+                question.setQuestionKey("rq-" + article.getId() + "-" + order);
+                question.setDomain(Question.DOMAIN_READING);
                 question.setArticleId(article.getId());
-                question.setType(questionSeed.type());
+                question.setType(questionSeed.type().name());
                 question.setPrompt(questionSeed.prompt());
                 question.setOptionsJson(objectMapper.writeValueAsString(questionSeed.options()));
                 question.setAnswer(questionSeed.answer());
                 question.setExplanation(questionSeed.explanation());
+                question.setSource("SEED");
                 question.setParagraphRef(questionSeed.paragraphRef());
                 question.setSortOrder(order++);
                 questionRepository.save(question);
@@ -141,6 +188,23 @@ public class ContentSeeder implements ApplicationRunner {
             count++;
         }
         return count;
+    }
+
+    private Question seedQuestion(Long topicId, GrammarSeedData.ExerciseSeed exercise) throws Exception {
+        Question row = new Question();
+        row.setQuestionKey(Question.seedKey(topicId, exercise.id()));
+        row.setDomain(Question.DOMAIN_GRAMMAR);
+        row.setTopicId(topicId);
+        row.setType(exercise.type() == null ? "MCQ" : exercise.type());
+        row.setPool("PRACTICE");
+        row.setPrompt(exercise.prompt());
+        row.setOptionsJson(objectMapper.writeValueAsString(
+                exercise.options() == null ? List.of() : exercise.options()));
+        row.setAnswer(exercise.answer() == null ? "" : exercise.answer());
+        row.setExplanation(exercise.explanation() == null ? "" : exercise.explanation());
+        row.setOptionNotesJson("[]");
+        row.setSource("SEED");
+        return row;
     }
 
     private int countWords(String content) {

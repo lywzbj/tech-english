@@ -4,6 +4,10 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.techenglish.common.ApiException;
 import com.techenglish.plan.LearningEventService;
+import com.techenglish.question.Question;
+import com.techenglish.question.QuestionAttempt;
+import com.techenglish.question.QuestionAttemptRepository;
+import com.techenglish.question.QuestionRepository;
 import com.techenglish.vector.ArticleImportedEvent;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.ApplicationEventPublisher;
@@ -24,7 +28,8 @@ public class ReadingService {
 
     private final ReadingArticleRepository articleRepository;
     private final ReadingTagRepository tagRepository;
-    private final ReadingQuestionRepository questionRepository;
+    private final QuestionRepository questionRepository;
+    private final QuestionAttemptRepository attemptRepository;
     private final ReadingSessionRepository sessionRepository;
     private final ReadingProgressRepository progressRepository;
     private final UrlArticleImporter urlArticleImporter;
@@ -78,7 +83,7 @@ public class ReadingService {
                 toSummary(article, read, scrollPercent,
                         article.getTagId() == null ? null : tagRepository.findById(article.getTagId()).orElse(null)),
                 article.getContentMd(),
-                questionRepository.findByArticleIdOrderBySortOrderAsc(articleId).stream()
+                readingQuestions(articleId).stream()
                         .map(this::toQuestion)
                         .toList(),
                 scrollPercent
@@ -168,16 +173,28 @@ public class ReadingService {
     public ReadingDtos.CompleteResponse complete(Long userId, Long articleId, ReadingDtos.CompleteRequest request) {
         ReadingArticle article = articleRepository.findById(articleId)
                 .orElseThrow(() -> ApiException.notFound("ARTICLE_NOT_FOUND", "文章不存在"));
-        List<ReadingQuestion> questions = questionRepository.findByArticleIdOrderBySortOrderAsc(articleId);
+        List<Question> questions = readingQuestions(articleId);
         Map<Long, String> submitted = request.answers() == null ? Map.of() : request.answers().stream()
                 .collect(Collectors.toMap(ReadingDtos.AnswerDto::questionId,
                         ReadingDtos.AnswerDto::answer, (left, right) -> right));
         int correct = 0;
-        for (ReadingQuestion question : questions) {
+        for (Question question : questions) {
             String answer = submitted.get(question.getId());
-            if (answer != null && normalize(answer).equals(normalize(question.getAnswer()))) {
+            if (answer == null) {
+                continue; // 未作答不落流水：attempt 只记录真实提交过的答案
+            }
+            boolean isCorrect = normalize(answer).equals(normalize(question.getAnswer()));
+            if (isCorrect) {
                 correct++;
             }
+            QuestionAttempt attempt = new QuestionAttempt();
+            attempt.setUserId(userId);
+            attempt.setDomain(Question.DOMAIN_READING);
+            attempt.setArticleId(articleId);
+            attempt.setQuestionKey(question.getQuestionKey());
+            attempt.setAnswer(answer);
+            attempt.setCorrect(isCorrect);
+            attemptRepository.save(attempt);
         }
         ReadingSession session = new ReadingSession();
         session.setUserId(userId);
@@ -298,10 +315,16 @@ public class ReadingService {
         };
     }
 
-    private ReadingDtos.QuestionDto toQuestion(ReadingQuestion question) {
+    /** Static reading questions of one article, in display order (统一题库中阅读域的行). */
+    private List<Question> readingQuestions(Long articleId) {
+        return questionRepository.findByDomainAndArticleIdAndDeletedOrderBySortOrderAsc(
+                Question.DOMAIN_READING, articleId, 0);
+    }
+
+    private ReadingDtos.QuestionDto toQuestion(Question question) {
         return new ReadingDtos.QuestionDto(
                 question.getId(),
-                question.getType().name(),
+                question.getType(),
                 question.getPrompt(),
                 readList(question.getOptionsJson())
         );

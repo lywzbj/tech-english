@@ -76,7 +76,8 @@ app:
       grammar-explain: ${AI_PROMPT_VERSION_GRAMMAR_EXPLAIN:v1}
       writing-review: ${AI_PROMPT_VERSION_WRITING_REVIEW:v1}
       question-gen: ${AI_PROMPT_VERSION_QUESTION_GEN:v2}
-      exercise-gen: ${AI_PROMPT_VERSION_EXERCISE_GEN:v1}
+      exercise-gen: ${AI_PROMPT_VERSION_EXERCISE_GEN:v2}
+      exercise-judge: ${AI_PROMPT_VERSION_EXERCISE_JUDGE:v1}
       ability-assess: ${AI_PROMPT_VERSION_ABILITY_ASSESS:v1}
       preview: ${AI_PROMPT_VERSION_PREVIEW:v1}
       vocab-judge: ${AI_PROMPT_VERSION_VOCAB_JUDGE:v1}

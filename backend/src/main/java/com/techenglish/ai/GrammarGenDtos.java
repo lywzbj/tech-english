@@ -14,9 +14,12 @@ public final class GrammarGenDtos {
     }
 
     /**
-     * One generated question. {@code answer} is the full text of the correct
-     * option; {@code optionNotes} is aligned with {@code options} (one Chinese
-     * note per option). The pool is chosen by the caller, not the model.
+     * One generated question. For {@code MCQ} items, {@code answer} is the full
+     * text of the correct option and {@code optionNotes} aligns with
+     * {@code options}. For open items ({@code TRANSFORM} / {@code TRANSLATE} /
+     * {@code PRODUCE}) both lists are empty and {@code answer} holds one model
+     * answer — graded afterwards by the exercise-judge call, not by string match.
+     * The pool is chosen by the caller, not the model.
      */
     public record GenExercise(
             Integer level,
@@ -41,5 +44,17 @@ public final class GrammarGenDtos {
             String promptVersion,
             List<GenExercise> exercises
     ) {
+    }
+
+    /**
+     * One judge verdict for an open (typed-answer) exercise. {@code index} echoes
+     * the position of the item in the submitted batch, so verdicts can be matched
+     * back to exercises even if the model returns them out of order.
+     */
+    public record JudgeVerdict(Integer index, Boolean correct, String feedback) {
+    }
+
+    /** Spring AI structured-output target for the exercise-judge purpose. */
+    public record JudgePayload(List<JudgeVerdict> verdicts) {
     }
 }

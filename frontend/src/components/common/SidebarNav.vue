@@ -10,6 +10,7 @@ import {
   Reading,
   Search,
   Setting,
+  Share,
   SwitchButton,
   Trophy,
 } from '@element-plus/icons-vue'
@@ -24,6 +25,7 @@ const primary = [
   { name: 'dashboard', label: '今日学习', icon: DataAnalysis, to: '/' },
   { name: 'plan', label: '学习计划', icon: Calendar, to: '/plan' },
   { name: 'grammar', label: '语法闯关', icon: Trophy, to: '/grammar' },
+  { name: 'grammar-tree', label: '知识树', icon: Share, to: '/grammar/tree' },
   { name: 'review', label: '到期复习', icon: Collection, to: '/review' },
   { name: 'reading', label: '阅读实验室', icon: Reading, to: '/reading' },
   { name: 'reading-tags', label: '标签管理', icon: PriceTag, to: '/reading/tags' },

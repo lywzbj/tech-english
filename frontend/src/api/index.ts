@@ -4,11 +4,14 @@ import type {
   AiStatus,
   AttemptsResponse,
   AuthResponse,
+  BossDrawResponse,
   Dashboard,
   DueVocabResponse,
   GrammarLesson,
   GrammarPath,
   GrammarGenerateResponse,
+  GrammarTree,
+  GrammarTreeNode,
   MeResponse,
   PreviewContent,
   PreviewGenerateResponse,
@@ -28,6 +31,7 @@ import type {
   SetupStatus,
   Task,
   TodayPlan,
+  TopicCreateRequest,
   VectorStatus,
   VocabCard,
   VocabJudgeResponse,
@@ -67,6 +71,13 @@ export const grammarApi = {
     http
       .post<AttemptsResponse>(`/grammar/topics/${encodeURIComponent(slug)}/attempts`, { mode, answers })
       .then((r) => r.data),
+  bossDraw: (slug: string) =>
+    http
+      .get<BossDrawResponse>(`/grammar/topics/${encodeURIComponent(slug)}/boss`)
+      .then((r) => r.data),
+  tree: () => http.get<GrammarTree>('/grammar/tree').then((r) => r.data),
+  createTopic: (body: TopicCreateRequest) =>
+    http.post<GrammarTreeNode>('/grammar/topics', body).then((r) => r.data),
 }
 
 export const vocabularyApi = {

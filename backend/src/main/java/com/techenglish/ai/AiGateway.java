@@ -27,6 +27,7 @@ public class AiGateway {
     private static final String PURPOSE_PREVIEW = "preview";
     private static final String PURPOSE_QUESTION_GEN = "question-gen";
     private static final String PURPOSE_EXERCISE_GEN = "exercise-gen";
+    private static final String PURPOSE_EXERCISE_JUDGE = "exercise-judge";
     private static final double TEMPERATURE = 0.2;
     private static final Logger log = LoggerFactory.getLogger(AiGateway.class);
 
@@ -39,6 +40,7 @@ public class AiGateway {
     private final StructuredOutputConverter<AiDtos.VocabScanPayload> scanConverter;
     private final StructuredOutputConverter<QuizDtos.QuestionGenPayload> questionGenConverter;
     private final StructuredOutputConverter<GrammarGenDtos.ExerciseGenPayload> exerciseGenConverter;
+    private final StructuredOutputConverter<GrammarGenDtos.JudgePayload> exerciseJudgeConverter;
     private final AiCallLogRepository aiCallLogRepository;
 
     public AiGateway(AiProperties properties, ChatClient aiChatClient, PromptRegistry promptRegistry,
@@ -58,6 +60,8 @@ public class AiGateway {
                 new BeanOutputConverter<>(QuizDtos.QuestionGenPayload.class, objectMapper));
         this.exerciseGenConverter = new TolerantConverter<>(
                 new BeanOutputConverter<>(GrammarGenDtos.ExerciseGenPayload.class, objectMapper));
+        this.exerciseJudgeConverter = new TolerantConverter<>(
+                new BeanOutputConverter<>(GrammarGenDtos.JudgePayload.class, objectMapper));
         this.aiCallLogRepository = aiCallLogRepository;
     }
 
@@ -256,6 +260,18 @@ public class AiGateway {
         return new GrammarGenDtos.ExerciseGenResponse(providerName(), properties.getModel(),
                 promptRegistry.versionLabel(PURPOSE_EXERCISE_GEN),
                 payload.exercises() == null ? List.of() : payload.exercises());
+    }
+
+    /**
+     * Grades the open (typed-answer) grammar items of one submission in a single
+     * call. {@code vars} carries {@code point} (the tested grammar knowledge point)
+     * and {@code items} (a JSON array of index/type/prompt/reference/answer).
+     * Verdicts are returned as-is; the grammar service matches them by {@code index}
+     * and degrades missing entries to "incorrect" on the learner side.
+     */
+    public GrammarGenDtos.JudgePayload judgeGrammarAnswers(Long userId, Map<String, String> vars) {
+        return callStructured(PURPOSE_EXERCISE_JUDGE, userId, vars,
+                exerciseJudgeConverter, "AI 批改失败，请稍后重试");
     }
 
     /**

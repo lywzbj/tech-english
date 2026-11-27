@@ -58,10 +58,29 @@ const router = createRouter({
           meta: { title: '语法闯关' },
         },
         {
+          // Static segment; vue-router prefers it over the dynamic 'grammar/:slug' below.
+          path: 'grammar/tree',
+          name: 'grammar-tree',
+          component: () => import('@/views/GrammarTreeView.vue'),
+          meta: { title: '知识树' },
+        },
+        {
           path: 'grammar/:slug',
           name: 'grammar-lesson',
           component: () => import('@/views/GrammarLessonView.vue'),
           meta: { title: '语法课' },
+        },
+        {
+          path: 'grammar/:slug/practice',
+          name: 'grammar-practice',
+          component: () => import('@/views/GrammarPracticeView.vue'),
+          meta: { title: '语法练习' },
+        },
+        {
+          path: 'grammar/:slug/wrong',
+          name: 'grammar-wrong',
+          component: () => import('@/views/GrammarWrongView.vue'),
+          meta: { title: '最近错题' },
         },
         {
           path: 'review',

@@ -49,4 +49,12 @@ public class GrammarProgress extends BaseEntity {
 
     @Column(name = "next_review_at")
     private Instant nextReviewAt;
+
+    /** JSON array of exercise keys from the latest BOSS submission; the next boss
+     *  draw excludes them so a retake is a fresh paper, not the one just answered. */
+    @Column(name = "last_boss_ids", columnDefinition = "TEXT")
+    private String lastBossIds;
+
+    @Column(name = "last_boss_at")
+    private Instant lastBossAt;
 }

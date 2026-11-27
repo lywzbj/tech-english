@@ -95,8 +95,20 @@ public class SqliteSchemaMigrator implements SmartInitializingSingleton {
     private List<Resource> discoverScripts() throws IOException {
         Resource[] resources = new PathMatchingResourcePatternResolver().getResources(MIGRATION_PATTERN);
         List<Resource> scripts = new ArrayList<>(List.of(resources));
-        scripts.sort(Comparator.comparing(resource -> resource.getFilename() == null ? "" : resource.getFilename()));
+        // Numeric order, not lexicographic filename order: "V10" must run after "V1",
+        // not before it (a fresh DB applies V1__schema first).
+        scripts.sort(Comparator.comparingLong(this::migrationOrder)
+                .thenComparing(resource -> resource.getFilename() == null ? "" : resource.getFilename()));
         return scripts;
+    }
+
+    private long migrationOrder(Resource script) {
+        String version = versionOf(script);
+        try {
+            return Long.parseLong(version.substring(1));
+        } catch (NumberFormatException ex) {
+            throw new IllegalStateException("SQLite migration version must be V<number>: " + version, ex);
+        }
     }
 
     private void createVersionTable(Connection connection) throws SQLException {
